@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Temporary files
+*.swp
+*.swo
+*~
+
+# Literature (large OCR'd textbook - not for public repo)
+literature/
+
+# Git internal
+.gitkeep
