@@ -5,6 +5,7 @@
 *.swp
 *.swo
 *~
+.Rhistory
 
 # Literature (large OCR'd textbook - not for public repo)
 literature/

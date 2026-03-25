@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<script src="lecture-03_files/libs/clipboard/clipboard.min.js"></script>
+<script src="lecture-03_files/libs/quarto-html/tabby.min.js"></script>
+<script src="lecture-03_files/libs/quarto-html/popper.min.js"></script>
+<script src="lecture-03_files/libs/quarto-html/tippy.umd.min.js"></script>
+<link href="lecture-03_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="lecture-03_files/libs/quarto-html/light-border.css" rel="stylesheet">
+<link href="lecture-03_files/libs/quarto-html/quarto-syntax-highlighting-ed96de9b727972fe78a7b5d16c58bf87.css" rel="stylesheet" id="quarto-text-highlighting-styles"><meta charset="utf-8">
+  <meta name="generator" content="quarto-1.8.27">
+
+  <meta name="author" content="Виктор Аврамов">
+  <title>Тема 3: Съвършени и несъвършени договори</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+  <link rel="stylesheet" href="lecture-03_files/libs/revealjs/dist/reset.css">
+  <link rel="stylesheet" href="lecture-03_files/libs/revealjs/dist/reveal.css">
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="lecture-03_files/libs/revealjs/dist/theme/quarto-534cd8e3a96973385dffff3f4709048d.css">
+  <link rel="stylesheet" href="style.css">
+  <link href="lecture-03_files/libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
+  <link href="lecture-03_files/libs/revealjs/plugin/reveal-menu/menu.css" rel="stylesheet">
+  <link href="lecture-03_files/libs/revealjs/plugin/reveal-menu/quarto-menu.css" rel="stylesheet">
+  <link href="lecture-03_files/libs/revealjs/plugin/quarto-support/footer.css" rel="stylesheet">
+  <style type="text/css">
+    .reveal div.sourceCode {
+      margin: 0;
+      overflow: auto;
+    }
+    .reveal div.hanging-indent {
+      margin-left: 1em;
+      text-indent: -1em;
+    }
+    .reveal .slide:not(.center) {
+      height: 100%;
+      overflow-y: auto;
+    }
+    .reveal .slide.scrollable {
+      overflow-y: auto;
+    }
+    .reveal .footnotes {
+      height: 100%;
+      overflow-y: auto;
+    }
+    .reveal .slide .absolute {
+      position: absolute;
+      display: block;
+    }
+    .reveal .footnotes ol {
+      counter-reset: ol;
+      list-style-type: none; 
+      margin-left: 0;
+    }
+    .reveal .footnotes ol li:before {
+      counter-increment: ol;
+      content: counter(ol) ". "; 
+    }
+    .reveal .footnotes ol li > p:first-child {
+      display: inline-block;
+    }
+    .reveal .slide ul,
+    .reveal .slide ol {
+      margin-bottom: 0.5em;
+    }
+    .reveal .slide ul li,
+    .reveal .slide ol li {
+      margin-top: 0.4em;
+      margin-bottom: 0.2em;
+    }
+    .reveal .slide ul[role="tablist"] li {
+      margin-bottom: 0;
+    }
+    .reveal .slide ul li > *:first-child,
+    .reveal .slide ol li > *:first-child {
+      margin-block-start: 0;
+    }
+    .reveal .slide ul li > *:last-child,
+    .reveal .slide ol li > *:last-child {
+      margin-block-end: 0;
+    }
+    .reveal .slide .columns:nth-child(3) {
+      margin-block-start: 0.8em;
+    }
+    .reveal blockquote {
+      box-shadow: none;
+    }
+    .reveal .tippy-content>* {
+      margin-top: 0.2em;
+      margin-bottom: 0.7em;
+    }
+    .reveal .tippy-content>*:last-child {
+      margin-bottom: 0.2em;
+    }
+    .reveal .slide > img.stretch.quarto-figure-center,
+    .reveal .slide > img.r-stretch.quarto-figure-center {
+      display: block;
+      margin-left: auto;
+      margin-right: auto; 
+    }
+    .reveal .slide > img.stretch.quarto-figure-left,
+    .reveal .slide > img.r-stretch.quarto-figure-left  {
+      display: block;
+      margin-left: 0;
+      margin-right: auto; 
+    }
+    .reveal .slide > img.stretch.quarto-figure-right,
+    .reveal .slide > img.r-stretch.quarto-figure-right  {
+      display: block;
+      margin-left: auto;
+      margin-right: 0; 
+    }
+  </style>
+</head>
+<body class="quarto-light">
+  <div class="reveal">
+    <div class="slides">
+
+<section id="title-slide" class="quarto-title-block center">
+  <h1 class="title">Тема 3: Съвършени и несъвършени договори</h1>
+  <p class="subtitle">GENB070 Общество, икономика и бизнес</p>
+
+<div class="quarto-title-authors">
+<div class="quarto-title-author">
+<div class="quarto-title-author-name">
+Виктор Аврамов 
+</div>
+</div>
+</div>
+
+</section>
+<section id="резюме-от-лекции-1-и-2" class="slide level2">
+<h2>Резюме от Лекции 1 и 2</h2>
+<ul>
+<li class="fragment">Видяхме, че <strong>фирмите съществуват</strong>, защото пазарните трансакции имат разходи (Коуз).</li>
+<li class="fragment">Трансакционните разходи включват <strong>координационни</strong> и <strong>мотивационни</strong> компоненти.</li>
+<li class="fragment">Идентифицираме <strong>пет измерения</strong> на трансакциите: специфичност, честота, несигурност, измеримост, свързаност.</li>
+<li class="fragment">Днес преминаваме от въпроса <em>защо съществуват фирми</em> към въпроса: <strong>Защо договорите са несъвършени — и какво следва от това?</strong></li>
+</ul>
+<div class="fragment">
+<blockquote>
+<p><em>„Всеки сериозен опит за изучаване на икономическата организация трябва да се справи с едновременните последствия от ограничената рационалност и опортюнизма, съчетани с условието за специфичност на активите.”</em> — Оливър Уилямсън</p>
+</blockquote>
+</div>
+</section>
+<section class="slide level2">
+
+</section>
+<section>
+<section id="част-i-перфектният-договор-идеал-и-реалност" class="title-slide slide level1 center">
+<h1>Част I: Перфектният договор — идеал и реалност</h1>
+
+</section>
+<section id="какво-би-бил-перфектният-договор" class="slide level2">
+<h2>Какво би бил „перфектният договор”?</h2>
+<p>По принцип един <strong>перфектно изготвен пълен договор</strong> (complete contract) би могъл да реши всеки мотивационен проблем. Той би определил:</p>
+<ul>
+<li class="fragment">Точно какво трябва да направи <strong>всяка страна</strong> при <strong>всяко възможно обстоятелство</strong></li>
+<li class="fragment">Как се разпределят <strong>разходите и ползите</strong> при всяка бъдеща ситуация (включително при нарушение на договора)</li>
+<li class="fragment">Всяка страна <strong>доброволно</strong> да спазва условията, защото е в неин интерес</li>
+</ul>
+<div class="fragment">
+<p>Ако първоначалният план за действие е ефикасен, пълният договор би го осъществил. Проблемите с мотивацията възникват <strong>само когато някои планове не могат да бъдат описани</strong> в пълен, изпълним договор.</p>
+</div>
+</section>
+<section id="мисловен-експеримент-договорът-ви-с-университета" class="slide level2">
+<h2>Мисловен експеримент: договорът ви с университета</h2>
+<p>Помислете какво би означавало да сключите <strong>пълен договор</strong> с университета, в който учите:</p>
+<div class="fragment">
+<p><strong>Двете страни трябва да предвидят:</strong></p>
+<ul>
+<li class="fragment">Какви предмети ще поискате да изучавате всеки семестър (което зависи от предходните ви курсове и от десетки непредвидими фактори)</li>
+<li class="fragment">Какви преподаватели ще бъдат на разположение</li>
+<li class="fragment">Какво ще е състоянието на пазара на труда, когато завършите</li>
+<li class="fragment">Какво ще стане, ако земетресение повреди сградите на кампуса</li>
+<li class="fragment">Какво ще стане, ако ново научно откритие обезсмисли наученото</li>
+<li class="fragment">Списъкът е <strong>безкраен</strong>.</li>
+</ul>
+</div>
+<div class="fragment">
+<p><strong>След това</strong> трябва да се определи: какво точно се прави при всяко от тези обстоятелства и колко плащате (или получавате) при всеки сценарий.</p>
+</div>
+</section>
+<section id="какви-са-изискванията-за-пълен-договор" class="slide level2">
+<h2>Какви са изискванията за пълен договор?</h2>
+<p>Три неща трябва да се реализират <strong>едновременно</strong>:</p>
+<div class="fragment">
+<p><strong>1. Перфектно предвиждане</strong></p>
+<ul>
+<li class="fragment">Всяка страна трябва да предвиди <strong>всички</strong> релевантни бъдещи обстоятелства и да може да ги опише <strong>еднозначно</strong> — и преди, и след като настъпят.</li>
+</ul>
+</div>
+<div class="fragment">
+<p><strong>2. Оптимален план за действие при всяко обстоятелство</strong></p>
+<ul>
+<li class="fragment">Страните трябва да определят и да се съгласят за <strong>ефикасен начин на действие</strong> и компенсации за всяка страна при всяка възможна ситуация.</li>
+</ul>
+</div>
+<div class="fragment">
+<p><strong>3. Доброволно спазване</strong></p>
+<ul>
+<li class="fragment">Нито една страна не трябва да иска <strong>предоговаряне</strong> — иначе оригиналният договор се обезсмисля.</li>
+<li class="fragment">Всяка страна трябва да може свободно да <strong>провери</strong> дали условията се спазват и, при нарушение, да <strong>наложи</strong> изпълнение.</li>
+</ul>
+</div>
+<div class="fragment">
+<blockquote>
+<p>Когато всички тези условия са изпълнени, пазарите работят перфектно. Но в реалния свят <strong>нито едно от тях не е напълно изпълнено</strong>.</p>
+</blockquote>
+</div>
+</section>
+<section class="slide level2">
+
+</section></section>
+<section>
+<section id="част-ii-ограничена-рационалност-защо-договорите-са-непълни" class="title-slide slide level1 center">
+<h1>Част II: Ограничена рационалност — защо договорите са непълни</h1>
+
+</section>
+<section id="хърбърт-саймън-и-ограничената-рационалност" class="slide level2">
+<h2>Хърбърт Саймън и ограничената рационалност</h2>
+<p>Реалните хора <strong>не са всезнаещи</strong> и не могат перфектно да предвиждат бъдещето:</p>
+<div class="fragment">
+<ul>
+<li class="fragment">Не могат да решават произволно сложни задачи точно, безплатно и мигновено</li>
+<li class="fragment">Не могат да комуникират помежду си свободно и перфектно</li>
+<li class="fragment">Те са <strong>ограничено рационални</strong> (boundedly rational) — и го знаят</li>
+</ul>
+</div>
+<div class="fragment">
+<p>Какво означава това за договорите?</p>
+<ul>
+<li class="fragment">Хората осъзнават, че <strong>не могат</strong> да предвидят всичко, което може да има значение</li>
+<li class="fragment">Разбират, че комуникацията е <strong>скъпа и несъвършена</strong></li>
+<li class="fragment">Знаят, че <strong>е малко вероятно</strong> да намерят математически оптималното решение</li>
+</ul>
+</div>
+<div class="fragment">
+<p>И все пак действат <strong>целенасочено рационално</strong>: опитват се да направят най-доброто от възможното при ограниченията, с които работят. И освен това — <strong>се учат</strong>.</p>
+</div>
+</section>
+<section id="три-причини-за-непълнота-на-договорите" class="slide level2">
+<h2>Три причини за непълнота на договорите</h2>
+<p><strong>1. Непредвидени обстоятелства</strong></p>
+<ul>
+<li class="fragment">Неизбежно възникват ситуации, за които никой не е помислил.</li>
+<li class="fragment"><em>Пример</em>: Американски компании, купили рекламно време за Олимпиадата в Москва 1980, <strong>никога не са предвидили</strong>, че отборът на САЩ ще бойкотира игрите. Рекламното време губи почти цялата си стойност.</li>
+<li class="fragment"><em>Пример</em>: Westinghouse продава ядрено гориво при фиксирани цени. Когато международен картел рязко покачва цената на урана, компанията <strong>отказва да изпълни</strong> договорите — започват съдебни дела.</li>
+</ul>
+<div class="fragment">
+<p><strong>2. Скъпи изчисления и договаряне</strong></p>
+<ul>
+<li class="fragment">Дори когато обстоятелствата <strong>могат</strong> да се предвидят, те може да изглеждат толкова малко вероятни, че не си заслужава да бъдат описвани. Но преценките за “малко вероятно” <strong>също може да са грешни</strong>.</li>
+<li class="fragment"><em>Пример</em>: GM разрешава на работници да си тръгват рано, ако изпълнят дневната си норма. В резултат продуктивни работници могат да приключат до обяд. Мениджмънтът <strong>покачва нормата</strong>. Работниците се чувстват излъгани. Мениджмънтът е <strong>можел</strong> да предвиди тази ситуация — но не е счел за нужно да определи правилата предварително.</li>
+</ul>
+</div>
+<div class="fragment">
+<p><strong>3. Неточност на езика</strong></p>
+<ul>
+<li class="fragment">Естественият език е <strong>по природа неточен</strong>. Колкото повече конкретни клаузи добавите, толкова повече граници има — и толкова повече спорове за това <strong>коя клауза се прилага</strong> в конкретния случай.</li>
+</ul>
+</div>
+</section>
+<section id="как-хората-се-справят-договори-за-отношения" class="slide level2">
+<h2>Как хората се справят? Договори за отношения</h2>
+<p>Щом пълният договор е невъзможен, хората създават <strong>различни</strong> договори от тези, които описва класическата теория:</p>
+<div class="fragment">
+<p><strong>Договори за отношения</strong> (relational contract): Не се опитва да определи конкретни действия за всяка ситуация. Вместо това определя:</p>
+<ul>
+<li class="fragment"><strong>Цели и принципи</strong>: каква е рамката на отношенията</li>
+<li class="fragment"><strong>Критерии</strong> за вземане на решения при непредвидени ситуации</li>
+<li class="fragment"><strong>Кой има властта</strong> да действа — и в какви граници</li>
+<li class="fragment"><strong>Механизми за разрешаване на спорове</strong></li>
+</ul>
+</div>
+<div class="fragment">
+<p><em>Пример</em>: Факултетният наръчник на Станфорд определя подробно правата за патенти и ограниченията за странична работа. Но за <strong>най-важните</strong> въпроси — заплата и условия за постоянна позиция (tenure) — той мълчи или описва само <strong>процедурите</strong>, не крайните резултати.</p>
+</div>
+<div class="fragment">
+<blockquote>
+<p>Трудовият договор е типичен договор за отношения: служителят се съгласява да <strong>следва указанията</strong> на работодателя (в рамките на определени граници), вместо да договаря всяко конкретно действие. Крайната защита за всяка страна по договора е: служителят може да <strong>напусне</strong>, а работодателят може да <strong>уволни</strong>.</p>
+</blockquote>
+</div>
+</section>
+<section id="имплицитни-неизречени-договори" class="slide level2">
+<h2>Имплицитни (неизречени) договори</h2>
+<ul>
+<li class="fragment">Важно допълнение към непълните договори са <strong>имплицитните</strong> договори — неизречени, но (предполагаемо) споделени очаквания.</li>
+</ul>
+<div class="fragment">
+<ul>
+<li class="fragment"><em>Пример</em>: Никой не е писал в договора на преподавателите в Станфорд, че те ще имат <strong>право на глас при назначаването</strong> на нови колеги, или че ще получат <strong>офис и секретарски услуги</strong>. Но и двете страни <strong>предполагат</strong>, че това е така.</li>
+</ul>
+</div>
+<div class="fragment">
+<ul>
+<li class="fragment"><strong>Организационната култура</strong> — споделени ценности, начини на мислене, убеждения за „как се правят нещата тук” — е ключов аспект на имплицитния договор.</li>
+</ul>
+</div>
+<div class="fragment">
+<ul>
+<li class="fragment"><strong>Проблемът</strong>: Имплицитните договори не могат да бъдат наложени в съд. Те се поддържат чрез <strong>репутация</strong> — тези, които ги нарушават, <strong>губят доверието</strong> на другите.</li>
+</ul>
+</div>
+<div class="fragment">
+<blockquote>
+<p>Промяната на организационната култура означава <strong>нарушаване на стари имплицитни договори</strong> и въвеждане на нови — без възможността те да бъдат обсъдени изрично. Затова промяната на културата е толкова трудна.</p>
+</blockquote>
+</div>
+</section>
+<section class="slide level2">
+
+</section></section>
+<section>
+<section id="част-iii-обвързване-доверие-и-предоговаряне" class="title-slide slide level1 center">
+<h1>Част III: Обвързване, доверие и предоговаряне</h1>
+
+</section>
+<section id="защо-обвързването-commitment-е-толкова-ценно" class="slide level2">
+<h2>Защо обвързването (commitment) е толкова ценно?</h2>
+<p>Обвързването може да промени <strong>очакванията</strong> на другите за вашето поведение — и с това да промени <strong>тяхното</strong> поведение:</p>
+<div class="fragment">
+<p><strong>Пример — Уилям Завоевателя (1066)</strong>:</p>
+<ul>
+<li class="fragment">След като акостира в Англия, <strong>изгаря флота си</strong> — елиминира единствения път за отстъпление.</li>
+<li class="fragment">Войниците му знаят, че <strong>нямат алтернатива</strong> — трябваше да се бият до край.</li>
+<li class="fragment">Англосаксонската войска вижда <strong>достоверния</strong> ангажимент.</li>
+</ul>
+</div>
+<div class="fragment">
+<p><strong>Пример — Apple Macintosh (1984)</strong>:</p>
+<ul>
+<li class="fragment">Apple построи <strong>високоспециализирана фабрика</strong>, трудно адаптируема за друго.</li>
+<li class="fragment"><strong>Публично се ангажира</strong>.</li>
+<li class="fragment">Посланието е: „Нямаме намерение да се отказваме от Macintosh” — което цели да повлияе едноаременно на служители, конкуренти и клиенти.</li>
+</ul>
+</div>
+<div class="fragment">
+<blockquote>
+<p>Обвързването е полезно, но <strong>скъпо</strong>: иначе няма да бъде достоверно.</p>
+</blockquote>
+</div>
+</section>
+<section id="двата-проблема-на-обвързването" class="slide level2">
+<h2>Двата проблема на обвързването</h2>
+<p><strong>Проблем 1: Отстъпление от ангажимент (reneging)</strong></p>
+<ul>
+<li class="fragment">Едната страна може просто да <strong>не спази</strong> ангажимента си: клиент, който не плаща; доставчик, който не доставя.</li>
+<li class="fragment">С непълни договори е <strong>лесно</strong> да се каже: „Това, което правя, е напълно в съответствие с договореното” — дори когато другата страна не е съгласна.</li>
+<li class="fragment">Правният спор между Westinghouse и електрическите компании за ядреното гориво е точно от този тип — двете страни имат <strong>противоположни интерпретации</strong> на „търговска невъзможност”.</li>
+</ul>
+<div class="fragment">
+<p><strong>Проблем 2: Предоговаряне</strong></p>
+<ul>
+<li class="fragment">Понякога и двете страни <strong>имат интерес</strong> да предоговорят условията, защото ефикасното при сключването на договора може да не е ефикасно <strong>след</strong>.</li>
+<li class="fragment"><em>Пример</em>: Много фирми дават на мениджърите <strong>опции върху акции</strong> като стимул. Ако цената на акциите падне рязко, опциите стават безсмислени. Фирмата издава <strong>нови</strong> опции при по-ниска цена. Но ако мениджърите <strong>предвиждат</strong> тази практика, те вече не се притесняват от спад — и стимулът се обезсмисля.</li>
+</ul>
+</div>
+</section>
+<section class="slide level2">
+
+</section></section>
+<section>
+<section id="част-iv-специфични-инвестиции-и-проблемът-на-задържането-hold-up" class="title-slide slide level1 center">
+<h1>Част IV: Специфични инвестиции и проблемът на задържането (hold-up)</h1>
+
+</section>
+<section id="какво-е-специфична-инвестиция" class="slide level2">
+<h2>Какво е специфична инвестиция?</h2>
+<ul>
+<li class="fragment"><strong>Инвестиция</strong> = разход на ресурси, който създава потенциален бъдещ поток на приходи. Потокът от приходи = <strong>актив</strong>.</li>
+<li class="fragment"><strong>Специфичен актив</strong> = актив, който е <strong>най-ценен</strong> в конкретен контекст на употреба или връзка с други активи. Специфичността се измерва като <strong>процент от стойността</strong>, който се губи при сняма на контекста.</li>
+</ul>
+<div class="fragment">
+<p><strong>Коспециализирани активи</strong>: Два актива са коспециализирани, ако са <strong>най-продуктивни, когато се използват заедно</strong>, и губят голяма част от стойността си поотделно.</p>
+</div>
+<div class="fragment">
+<p><strong>Пример — въглищна електроцентрала и мина</strong>:</p>
+<ul>
+<li class="fragment">Електроцентрала, построена <strong>до въглищна мина</strong>: трябва да разчита на точно тази мина за доставка на въглища.</li>
+<li class="fragment">Мината разчита на точно тази централа като <strong>единствен клиент</strong>.</li>
+<li class="fragment">Специална железопътна линия от мината до централата също е коспециализиран актив — няма друга употреба.</li>
+<li class="fragment">Централата без мината е почти безполезна. Мината без централата — също.</li>
+</ul>
+</div>
+<div class="fragment">
+<p><strong>Ключово</strong>: Когато инвестицията създава коспециализирани активи, <strong>значителна част от стойността</strong> зависи от поведението на другия собственик — който има <strong>собствени егоистични интереси</strong>.</p>
+</div>
+</section>
+<section id="hold-up-проблемът-за-задържането" class="slide level2">
+<h2>Hold-up: проблемът за задържането</h2>
+<p><strong>Hold-up</strong>: Всяка страна по договор се притеснява, че може да бъде <strong>принудена да приеме неизгодни условия</strong> след като вече е направила инвестиция — или че инвестицията й ще бъде <strong>обезценена</strong> от действията на другите.</p>
+<div class="fragment">
+<p><strong>Пример — Fisher Body и General Motors (1920-те)</strong>:</p>
+<ul>
+<li class="fragment">С развитието на технологията GM преминава от дървени към метални каросерии.</li>
+<li class="fragment">GM проектира нов завод за сглобяване и предлага на Fisher Body да построи <strong>нов завод за каросерии точно до него</strong> — без нужда от транспортна инфраструктура, каросериите ще минават <strong>направо по производствената линия</strong>.</li>
+<li class="fragment">Fisher <strong>отказва</strong> — нов завод, толкова тясно обвързан с нуждите на GM, би бил <strong>уязвим</strong> към бъдещи искания от GM.</li>
+</ul>
+</div>
+<div class="fragment">
+<ul>
+<li class="fragment">Проблемът е решен чрез <strong>вертикална интеграция</strong>: GM купува Fisher Body.</li>
+</ul>
+</div>
+<div class="fragment">
+<blockquote>
+<p>Ако договорите бяха пълни, проблем на задържането не би възникнал: страните биха определили предварително всички ситуации и механизми за защита. Именно <strong>комбинацията</strong> от специфични активи и непълни договори създава проблема.</p>
+</blockquote>
+</div>
+</section>
+<section id="hold-up-формалната-логика-без-висша-математика" class="slide level2">
+<h2>Hold-up: формалната логика (без висша математика)</h2>
+<p>Да опростим с числов пример:</p>
+<ul>
+<li class="fragment">Две фирми, A и B, влизат в съвместно начинание. Всяка инвестира <strong>2</strong> единици в напълно специфичен актив (безполезен извън начинанието).</li>
+<li class="fragment">Ако и двете инвестират, <strong>общата печалба</strong> е 8, или по 4 за всяка (нетно: 4 − 2 = <strong>2</strong>).</li>
+</ul>
+<div class="fragment">
+<p><strong>Но</strong>: Ако фирмите не могат да сключат обвързващ договор как да си поделят печалбата, всяка може да „завземе” повече — <strong>с цена 3</strong> за завземащия</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th></th>
+<th><strong>B: не завзема</strong></th>
+<th><strong>B: завзема</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>A: не грабва</strong></td>
+<td>2, 2</td>
+<td>−2, 3</td>
+</tr>
+<tr class="even">
+<td><strong>A: грабва</strong></td>
+<td>3, −2</td>
+<td>−1, −1</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="fragment">
+<ul>
+<li class="fragment">Ако A мисли, че B <strong>няма</strong> да завземе → A получава 3 vs.&nbsp;2 → <strong>A завзема</strong>.</li>
+<li class="fragment">Ако A мисли, че B <strong>ще</strong> завземе → A получава −1 (завземайки) vs.&nbsp;−2 (не завземайки) → <strong>A завзема</strong>.</li>
+<li class="fragment">A <strong>винаги завзема</strong>. Същата логика важи за B. Резултат: <strong>−1, −1</strong> — и двете фирми губят.</li>
+</ul>
+</div>
+<div class="fragment">
+<p>Но фирмите не са длъжни да играят тази игра. Ако <strong>предвиждат</strong> опортюнизма — <strong>изобщо не инвестират</strong>. Резултат: взаимноизгодно начинание, което <strong>никога не се осъществява</strong>.</p>
+</div>
+</section>
+<section id="последствия-на-проблема-на-задържането" class="slide level2">
+<h2>Последствия на проблема на задържането</h2>
+<p>Ако фирмите <strong>предвиждат</strong> проблема на задържането:</p>
+<div class="fragment">
+<p><strong>1. Недостатъчно (субоптимално) инвестиране</strong></p>
+<ul>
+<li class="fragment">Знаейки, че партньорът може да „открадне” част от стойността, инвеститорът <strong>инвестира по-малко</strong> от оптималното. Fisher Body не строи нов завод → GM не получава нужните каросерии → общата създадена стойност е по-ниска.</li>
+</ul>
+</div>
+<div class="fragment">
+<p><strong>2. Скъпи защитни мерки</strong></p>
+<ul>
+<li class="fragment">Страните изразходват ресурси за <strong>защита</strong> от задържане вместо за продуктивна дейност: скъпи юристи, сложни договори, мониторинг — всичко това е разход, който <strong>не създава стойност</strong>.</li>
+</ul>
+</div>
+<div class="fragment">
+<p><strong>3. Пропуснати възможности</strong></p>
+<ul>
+<li class="fragment">Някои взаимоизгодни сделки <strong>изобщо не се случват</strong>, защото страните знаят, че не могат да се защитят от hold-up.</li>
+</ul>
+</div>
+</section>
+<section class="slide level2">
+
+</section></section>
+<section>
+<section id="част-v-как-фирмите-могат-да-се-ангажират" class="title-slide slide level1 center">
+<h1>Част V: Как фирмите могат да се ангажират?</h1>
+
+</section>
+<section id="вертикална-интеграция-купи-си-партньора" class="slide level2">
+<h2>Вертикална интеграция: „Купи си партньора”</h2>
+<ul>
+<li class="fragment">Ако един предприиемач или фирма <strong>притежава и двата</strong> коспециализирани актива, проблемът за задържането изчезва — няма как да държиш сам себе си за заложник.</li>
+</ul>
+<div class="fragment">
+<ul>
+<li class="fragment"><em>Пример</em>: GM купува Fisher Body. Joskow установява, че въглищните мини, снабдяващи електроцентрали намиращи се до тях, <strong>най-често са собственост</strong> на самата електрическа компания — или имат <strong>дългосрочен договор</strong> с нея.</li>
+</ul>
+</div>
+<div class="fragment">
+<ul>
+<li class="fragment">Но вертикалната интеграция не е безплатна: собственикът може да <strong>няма</strong> нужната експертиза, времето или уменията за управление на новата дейност. Трябва да наеме мениджър — а мениджърът може да работи в <strong>свой</strong> интерес…</li>
+</ul>
+</div>
+<div class="fragment">
+<blockquote>
+<p>Вертикалната интеграция решава проблема на задържането, но създава <strong>нов</strong> проблем: морален риск (скрито действие) вътре във фирмата.</p>
+</blockquote>
+</div>
+</section>
+<section id="репутацията-като-механизъм-за-обвързване" class="slide level2">
+<h2>Репутацията като механизъм за обвързване</h2>
+<ul>
+<li class="fragment">Когато обвързващи договори не са възможни, <strong>грижата за репутацията</strong> може да ограничи договорния опортюнизъм.</li>
+</ul>
+<div class="fragment">
+<p><strong>Каква е идеята</strong>: Ако нарушиш едно обещание днес, утре <strong>никой няма да ти се довери</strong>. Загубата на бъдещи печалби от доверие може да <strong>надвиши</strong> краткосрочната изгода от нарушението.</p>
+</div>
+<div class="fragment">
+<p><strong>Кога репутацията работи най-добре?</strong></p>
+<ul>
+<li class="fragment">При <strong>чести</strong> сделки (повече бъдещи печалби, които да загубиш)</li>
+<li class="fragment">При <strong>дълъг хоризонт</strong> (по-далечното бъдеще има значение)</li>
+<li class="fragment">При <strong>високодоходни</strong> сделки (загубата от лоша репутация е по-голяма)</li>
+</ul>
+</div>
+<div class="fragment">
+<p><strong>Практическа импликация</strong>: При един договор за отношения, в който някой трябва да има <strong>право</strong> да взема решения при непредвидени ситуации — тази роля трябва да бъде отредена на страната, която има <strong>най-много за губене</strong> от повредена репутация: по-голямата, по-видимата, тази с по-дългосрочно отражение.</p>
+</div>
+<div class="fragment">
+<blockquote>
+<p>В дългосрочен трудов догоеор с фирма с репутация, <strong>фирмата</strong> обикновено е страната с повече за губене. Затова фирмата получава дискрецията — и отговорността — при непредвидени ситуации.</p>
+</blockquote>
+</div>
+</section>
+<section id="стратегии-за-защита-от-hold-up-обобщение" class="slide level2">
+<h2>Стратегии за защита от hold-up: обобщение</h2>
+<table class="caption-top">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Стратегия</th>
+<th>Механизъм</th>
+<th>Пример</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Вертикална интеграция</strong></td>
+<td>Придобиване на партньора</td>
+<td>GM купува Fisher Body; мини собственост на електрически производители</td>
+</tr>
+<tr class="even">
+<td><strong>Дългосрочни договори</strong></td>
+<td>Обвързвне се за дълъг период</td>
+<td>Договори за въглища с ескалиращи клаузи (Joskow)</td>
+</tr>
+<tr class="odd">
+<td><strong>Взаимни специфични инвестиции</strong></td>
+<td>И двете страни са „заключени” заедно</td>
+<td>Toyota: и тя зависи от доставчиците си (just-in-time)</td>
+</tr>
+<tr class="even">
+<td><strong>Репутация</strong></td>
+<td>Страхът от загуба на бъдещи сделки</td>
+<td>Фирма, известна с експлоатиране на доставчици, трудно намира нови</td>
+</tr>
+<tr class="odd">
+<td><strong>Необратими действия (ангажиране)</strong></td>
+<td>Съзнателно стесняваш избора си</td>
+<td>Apple: специализирана фабрика за Macintosh; Кортес: изгорени кораби</td>
+</tr>
+</tbody>
+</table>
+<div class="fragment">
+<blockquote>
+<p>Нито една стратегия не е универсална. Изборът зависи от <strong>естеството на трансакцията</strong> — специфичност, честота, несигурност, измеримост, свързаност (петте измерения от Лекция 2).</p>
+</blockquote>
+</div>
+</section>
+<section class="slide level2">
+
+</section></section>
+<section>
+<section id="част-vi-toyota-отново-модел-за-управление-без-пълни-договори" class="title-slide slide level1 center">
+<h1>Част VI: Toyota отново — модел за управление без пълни договори</h1>
+
+</section>
+<section id="toyota-и-доставчиците-когато-доверието-замества-договора" class="slide level2">
+<h2>Toyota и доставчиците: когато доверието замества договора</h2>
+<p>Спомнете си Toyota от Лекция 1:</p>
+<div class="fragment">
+<ul>
+<li class="fragment">Toyota работи с <strong>малко доставчици</strong> в <strong>дългосрочни отношения</strong> (10–20 години).</li>
+<li class="fragment">Доставчиците правят <strong>значителни специфични инвестиции</strong> — оборудване, обучение, процеси, адаптирани за Toyota.</li>
+</ul>
+</div>
+<div class="fragment">
+<p><strong>Въпрос</strong>: Защо доставчиците не се страхуват от задържане (hold-up)?</p>
+</div>
+<div class="fragment">
+<p><strong>Отговорът е комбинация от механизмите, които видяхме:</strong></p>
+<ul>
+<li class="fragment"><strong>Репутация</strong>: Toyota е известна с това, че <strong>не експлоатира</strong> доставчиците си — за разлика от GM, които редовно сменят доставчици за 1–2% по-ниска цена.</li>
+<li class="fragment"><strong>Договор за отношения</strong>: Вместо детайлни формални договори — <strong>споделени очаквания</strong>, обща култура, процедури за решаване на спорове.</li>
+<li class="fragment"><strong>Имплицитен договор</strong>: Подобренията в ефикасността се <strong>споделят</strong> между Toyota и доставчика.</li>
+<li class="fragment"><strong>Взаимна специфичност</strong>: Toyota <strong>също</strong> зависи от доставчиците — just-in-time не работи при смяна на партньор.</li>
+<li class="fragment"><strong>Техническа помощ</strong> като ангажимент: Toyota изпраща инженери в заводите на доставчиците — инвестира и в <strong>тяхното</strong> подобрение.</li>
+</ul>
+</div>
+<div class="fragment">
+<blockquote>
+<p>Моделът на Toyota показва, че hold-up може да се управлява <strong>без вертикална интеграция</strong> — чрез комбинация от репутация, имплицитни договори и договори за отношения, и взаимна зависимост.</p>
+</blockquote>
+</div>
+</section>
+<section class="slide level2">
+
+</section></section>
+<section>
+<section id="обобщение" class="title-slide slide level1 center">
+<h1>Обобщение</h1>
+
+</section>
+<section id="ключови-идеи-от-лекция-3" class="slide level2 scrollable">
+<h2>Ключови идеи от Лекция 3</h2>
+<ol type="1">
+<li class="fragment"><p><strong>„Съвършеният договор” не съществува</strong> — непредвидими бъдещи състояния, скъпо договаряне и неточност на езика правят всички договори непълни.</p></li>
+<li class="fragment"><p><strong>Ограничената рационалност</strong> е основната причина за непълнотата на договорите. Хората <strong>не са глупави</strong> — те правят най-доброто от възможното при ограниченията, с които работят.</p></li>
+<li class="fragment"><p><strong>Договорите за отношения и имплицитните договори</strong> са отговорът: вместо да определят конкретни действия, те установяват <strong>рамки, процедури и очаквания</strong>. Организационната култура е ключов имплицитен договор.</p></li>
+<li class="fragment"><p><strong>Специфичните инвестиции</strong> създават уязвимост — страната, която е инвестирала повече в специфичен актив, е в по-слаба позиция при предоговаряне.</p></li>
+<li class="fragment"><p><strong>Hold-up проблемът</strong> води до недостатъчно инвестиране и пропуснати възможности. Организациите се защитават чрез <strong>вертикална интеграция, репутация, дългосрочни отношения и ангажиране (commitment)</strong>.</p></li>
+</ol>
+</section>
+<section id="какво-следва" class="slide level2">
+<h2>Какво следва?</h2>
+<ul>
+<li class="fragment"><strong>Лекция 4</strong>: Когато информацията е частна — неблагоприятна селекция (Акерлоф), сигнализиране (Спенс), скрийнинг. Защо се „затварят” пазари? Случаят De Beers: инвестиране в преговорна позиция.</li>
+<li class="fragment"><strong>Семинар 2</strong>: Играта „Пазар на лимони” — симулация на неблагоприятна селекция + дискусия: къде виждате информационна асиметрия в реалния живот?</li>
+</ul>
+</section>
+<section id="големи-автори-и-изследователи" class="slide level2">
+<h2>Големи автори и изследователи</h2>
+<ul>
+<li class="fragment"><strong>Хърбърт Саймън</strong> (1916–2001): Ограничена рационалност, satisficing. Нобелова награда 1978.</li>
+<li class="fragment"><strong>Оливър Уилямсън</strong> (1932–2020): Специфични инвестиции, трансакционни разходи и организационни форми. Нобелова награда 2009.</li>
+<li class="fragment"><strong>Оливър Харт</strong> (<em>1948) и <strong>Бенгт Холмстрьом</strong> (</em>1949): Теория на непълните договори и стимулите. Съвместна Нобелова награда 2016.</li>
+<li class="fragment"><strong>Бенджамин Клайн</strong>, <strong>Робърт Крауфорд</strong> и <strong>Армен Алкиян</strong>: Пионери в анализа на hold-up проблема и вертикалната интеграция.</li>
+<li class="fragment"><strong>Пол Йоскоу</strong> (*1947): Емпирични изследвания на договорите за въглища и специфичните инвестиции.</li>
+</ul>
+</section>
+<section id="препоръчителна-литература" class="slide level2">
+<h2>Препоръчителна литература</h2>
+<ul>
+<li class="fragment">Milgrom, P. &amp; Roberts, J. (1992). <em>Economics, Organization and Management</em>. Prentice Hall. — <strong>Глава 5: Bounded Rationality and Private Information (първа половина: до „Private Information and Precontractual Opportunism”).</strong></li>
+<li class="fragment">Williamson, O. (1985). <em>The Economic Institutions of Capitalism: Firms, Markets, Relational Contracting</em>. New York: Free Press. — Глави 1–2.</li>
+<li class="fragment">Klein, B., Crawford, R. &amp; Alchian, A. (1978). <em>Vertical Integration, Appropriable Rents, and the Competitive Contracting Process</em>. The Journal of Law and Economics, 21(2), 297–326.</li>
+<li class="fragment">Joskow, P. L. (1985). Vertical integration and long-term contracts: The case of coal-burning electric generating plants. The Journal of Law, Economics, and Organization, 1(1), 33–80.</li>
+</ul>
+</section>
+<section id="въпроси-за-размисъл" class="slide level2 scrollable">
+<h2>Въпроси за размисъл</h2>
+<ol type="1">
+<li class="fragment"><p>Помислете за договор, който сте сключвали (наем, работа, абонамент). Какви <strong>непредвидени ситуации</strong> възникнаха, за които договорът мълчеше? Как бяха решени — чрез формално предоговаряне или чрез неизречени очаквания?</p></li>
+<li class="fragment"><p>Университетът, в който учите, има с вас <strong>договор за отношения</strong>. Какви са неговите <strong>имплицитни</strong> елементи — нещата, които никога не са писани, но и двете страни предполагат? Какво би се случило, ако университетът ги наруши?</p></li>
+<li class="fragment"><p>Доставчик инвестира в специализирана производствена линия за вашата компания. Как бихте го убедили, че <strong>няма</strong> да го „изцедите” след като инвестицията е направена? Кои от механизмите от днешната лекция бихте използвали?</p></li>
+<li class="fragment"><p>Защо Toyota успява да поддържа дългосрочни отношения с доставчиците си, докато GM редовно ги сменя? Кой модел е по-ефикасен в дългосрочен план — и <strong>защо</strong>?</p></li>
+</ol>
+
+</section></section>
+    </div>
+  <div class="quarto-auto-generated-content" style="display: none;">
+<div class="footer footer-default">
+
+</div>
+</div></div>
+
+  <script>window.backupDefine = window.define; window.define = undefined;</script>
+  <script src="lecture-03_files/libs/revealjs/dist/reveal.js"></script>
+  <!-- reveal.js plugins -->
+  <script src="lecture-03_files/libs/revealjs/plugin/quarto-line-highlight/line-highlight.js"></script>
+  <script src="lecture-03_files/libs/revealjs/plugin/pdf-export/pdfexport.js"></script>
+  <script src="lecture-03_files/libs/revealjs/plugin/reveal-menu/menu.js"></script>
+  <script src="lecture-03_files/libs/revealjs/plugin/reveal-menu/quarto-menu.js"></script>
+  <script src="lecture-03_files/libs/revealjs/plugin/quarto-support/support.js"></script>
+  
+
+  <script src="lecture-03_files/libs/revealjs/plugin/notes/notes.js"></script>
+  <script src="lecture-03_files/libs/revealjs/plugin/search/search.js"></script>
+  <script src="lecture-03_files/libs/revealjs/plugin/zoom/zoom.js"></script>
+  <script src="lecture-03_files/libs/revealjs/plugin/math/math.js"></script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script>
+
+  <script>
+
+      // Full list of configuration options available at:
+      // https://revealjs.com/config/
+      Reveal.initialize({
+'controlsAuto': true,
+'previewLinksAuto': false,
+'pdfSeparateFragments': false,
+'autoAnimateEasing': "ease",
+'autoAnimateDuration': 1,
+'autoAnimateUnmatched': true,
+'jumpToSlide': true,
+'menu': {"side":"left","useTextContentForMissingTitles":true,"markers":false,"loadIcons":false,"custom":[{"title":"Tools","icon":"<i class=\"fas fa-gear\"></i>","content":"<ul class=\"slide-menu-items\">\n<li class=\"slide-tool-item active\" data-item=\"0\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.fullscreen(event)\"><kbd>f</kbd> Fullscreen</a></li>\n<li class=\"slide-tool-item\" data-item=\"1\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.speakerMode(event)\"><kbd>s</kbd> Speaker View</a></li>\n<li class=\"slide-tool-item\" data-item=\"2\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.overview(event)\"><kbd>o</kbd> Slide Overview</a></li>\n<li class=\"slide-tool-item\" data-item=\"3\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.togglePdfExport(event)\"><kbd>e</kbd> PDF Export Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"4\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.toggleScrollView(event)\"><kbd>r</kbd> Scroll View Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"5\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.keyboardHelp(event)\"><kbd>?</kbd> Keyboard Help</a></li>\n</ul>"}],"openButton":true},
+'smaller': true,
+ 
+        // Display controls in the bottom right corner
+        controls: false,
+
+        // Help the user learn the controls by providing hints, for example by
+        // bouncing the down arrow when they first encounter a vertical slide
+        controlsTutorial: false,
+
+        // Determines where controls appear, "edges" or "bottom-right"
+        controlsLayout: 'edges',
+
+        // Visibility rule for backwards navigation arrows; "faded", "hidden"
+        // or "visible"
+        controlsBackArrows: 'faded',
+
+        // Display a presentation progress bar
+        progress: true,
+
+        // Display the page number of the current slide
+        slideNumber: false,
+
+        // 'all', 'print', or 'speaker'
+        showSlideNumber: 'all',
+
+        // Add the current slide number to the URL hash so that reloading the
+        // page/copying the URL will return you to the same slide
+        hash: true,
+
+        // Start with 1 for the hash rather than 0
+        hashOneBasedIndex: false,
+
+        // Flags if we should monitor the hash and change slides accordingly
+        respondToHashChanges: true,
+
+        // Push each slide change to the browser history
+        history: true,
+
+        // Enable keyboard shortcuts for navigation
+        keyboard: true,
+
+        // Enable the slide overview mode
+        overview: true,
+
+        // Disables the default reveal.js slide layout (scaling and centering)
+        // so that you can use custom CSS layout
+        disableLayout: false,
+
+        // Vertical centering of slides
+        center: false,
+
+        // Enables touch navigation on devices with touch input
+        touch: true,
+
+        // Loop the presentation
+        loop: false,
+
+        // Change the presentation direction to be RTL
+        rtl: false,
+
+        // see https://revealjs.com/vertical-slides/#navigation-mode
+        navigationMode: 'linear',
+
+        // Randomizes the order of slides each time the presentation loads
+        shuffle: false,
+
+        // Turns fragments on and off globally
+        fragments: true,
+
+        // Flags whether to include the current fragment in the URL,
+        // so that reloading brings you to the same fragment position
+        fragmentInURL: false,
+
+        // Flags if the presentation is running in an embedded mode,
+        // i.e. contained within a limited portion of the screen
+        embedded: false,
+
+        // Flags if we should show a help overlay when the questionmark
+        // key is pressed
+        help: true,
+
+        // Flags if it should be possible to pause the presentation (blackout)
+        pause: true,
+
+        // Flags if speaker notes should be visible to all viewers
+        showNotes: false,
+
+        // Global override for autoplaying embedded media (null/true/false)
+        autoPlayMedia: null,
+
+        // Global override for preloading lazy-loaded iframes (null/true/false)
+        preloadIframes: null,
+
+        // Number of milliseconds between automatically proceeding to the
+        // next slide, disabled when set to 0, this value can be overwritten
+        // by using a data-autoslide attribute on your slides
+        autoSlide: 0,
+
+        // Stop auto-sliding after user input
+        autoSlideStoppable: true,
+
+        // Use this method for navigation when auto-sliding
+        autoSlideMethod: null,
+
+        // Specify the average time in seconds that you think you will spend
+        // presenting each slide. This is used to show a pacing timer in the
+        // speaker view
+        defaultTiming: null,
+
+        // Enable slide navigation via mouse wheel
+        mouseWheel: false,
+
+        // The display mode that will be used to show slides
+        display: 'block',
+
+        // Hide cursor if inactive
+        hideInactiveCursor: true,
+
+        // Time before the cursor is hidden (in ms)
+        hideCursorTime: 5000,
+
+        // Opens links in an iframe preview overlay
+        previewLinks: false,
+
+        // Transition style (none/fade/slide/convex/concave/zoom)
+        transition: 'none',
+
+        // Transition speed (default/fast/slow)
+        transitionSpeed: 'default',
+
+        // Transition style for full page slide backgrounds
+        // (none/fade/slide/convex/concave/zoom)
+        backgroundTransition: 'none',
+
+        // Number of slides away from the current that are visible
+        viewDistance: 3,
+
+        // Number of slides away from the current that are visible on mobile
+        // devices. It is advisable to set this to a lower number than
+        // viewDistance in order to save resources.
+        mobileViewDistance: 2,
+
+        // The "normal" size of the presentation, aspect ratio will be preserved
+        // when the presentation is scaled to fit different resolutions. Can be
+        // specified using percentage units.
+        width: 1050,
+
+        height: 700,
+
+        // Factor of the display size that should remain empty around the content
+        margin: 0.1,
+
+        math: {
+          mathjax: 'https://cdn.jsdelivr.net/npm/mathjax@2.7.9/MathJax.js',
+          config: 'TeX-AMS_HTML-full',
+          tex2jax: {
+            inlineMath: [['\\(','\\)']],
+            displayMath: [['\\[','\\]']],
+            balanceBraces: true,
+            processEscapes: false,
+            processRefs: true,
+            processEnvironments: true,
+            preview: 'TeX',
+            skipTags: ['script','noscript','style','textarea','pre','code'],
+            ignoreClass: 'tex2jax_ignore',
+            processClass: 'tex2jax_process'
+          },
+        },
+
+        // reveal.js plugins
+        plugins: [QuartoLineHighlight, PdfExport, RevealMenu, QuartoSupport,
+
+          RevealMath,
+          RevealNotes,
+          RevealSearch,
+          RevealZoom
+        ]
+      });
+    </script>
+    <script id="quarto-html-after-body" type="application/javascript">
+      window.document.addEventListener("DOMContentLoaded", function (event) {
+        const tabsets =  window.document.querySelectorAll(".panel-tabset-tabby")
+        tabsets.forEach(function(tabset) {
+          const tabby = new Tabby('#' + tabset.id);
+        });
+        const isCodeAnnotation = (el) => {
+          for (const clz of el.classList) {
+            if (clz.startsWith('code-annotation-')) {                     
+              return true;
+            }
+          }
+          return false;
+        }
+        const onCopySuccess = function(e) {
+          // button target
+          const button = e.trigger;
+          // don't keep focus
+          button.blur();
+          // flash "checked"
+          button.classList.add('code-copy-button-checked');
+          var currentTitle = button.getAttribute("title");
+          button.setAttribute("title", "Copied!");
+          let tooltip;
+          if (window.bootstrap) {
+            button.setAttribute("data-bs-toggle", "tooltip");
+            button.setAttribute("data-bs-placement", "left");
+            button.setAttribute("data-bs-title", "Copied!");
+            tooltip = new bootstrap.Tooltip(button, 
+              { trigger: "manual", 
+                customClass: "code-copy-button-tooltip",
+                offset: [0, -8]});
+            tooltip.show();    
+          }
+          setTimeout(function() {
+            if (tooltip) {
+              tooltip.hide();
+              button.removeAttribute("data-bs-title");
+              button.removeAttribute("data-bs-toggle");
+              button.removeAttribute("data-bs-placement");
+            }
+            button.setAttribute("title", currentTitle);
+            button.classList.remove('code-copy-button-checked');
+          }, 1000);
+          // clear code selection
+          e.clearSelection();
+        }
+        const getTextToCopy = function(trigger) {
+          const outerScaffold = trigger.parentElement.cloneNode(true);
+          const codeEl = outerScaffold.querySelector('code');
+          for (const childEl of codeEl.children) {
+            if (isCodeAnnotation(childEl)) {
+              childEl.remove();
+            }
+          }
+          return codeEl.innerText;
+        }
+        const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+          text: getTextToCopy
+        });
+        clipboard.on('success', onCopySuccess);
+        if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+          const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+            text: getTextToCopy,
+            container: window.document.getElementById('quarto-embedded-source-code-modal')
+          });
+          clipboardModal.on('success', onCopySuccess);
+        }
+          var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+          var mailtoRegex = new RegExp(/^mailto:/);
+            var filterRegex = new RegExp('/' + window.location.host + '/');
+          var isInternal = (href) => {
+              return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+          }
+          // Inspect non-navigation links and adorn them if external
+         var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+          for (var i=0; i<links.length; i++) {
+            const link = links[i];
+            if (!isInternal(link.href)) {
+              // undo the damage that might have been done by quarto-nav.js in the case of
+              // links that we want to consider external
+              if (link.dataset.originalHref !== undefined) {
+                link.href = link.dataset.originalHref;
+              }
+            }
+          }
+        function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+          const config = {
+            allowHTML: true,
+            maxWidth: 500,
+            delay: 100,
+            arrow: false,
+            appendTo: function(el) {
+                return el.closest('section.slide') || el.parentElement;
+            },
+            interactive: true,
+            interactiveBorder: 10,
+            theme: 'light-border',
+            placement: 'bottom-start',
+          };
+          if (contentFn) {
+            config.content = contentFn;
+          }
+          if (onTriggerFn) {
+            config.onTrigger = onTriggerFn;
+          }
+          if (onUntriggerFn) {
+            config.onUntrigger = onUntriggerFn;
+          }
+            config['offset'] = [0,0];
+            config['maxWidth'] = 700;
+          window.tippy(el, config); 
+        }
+        const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+        for (var i=0; i<noterefs.length; i++) {
+          const ref = noterefs[i];
+          tippyHover(ref, function() {
+            // use id or data attribute instead here
+            let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+            try { href = new URL(href).hash; } catch {}
+            const id = href.replace(/^#\/?/, "");
+            const note = window.document.getElementById(id);
+            if (note) {
+              return note.innerHTML;
+            } else {
+              return "";
+            }
+          });
+        }
+        const findCites = (el) => {
+          const parentEl = el.parentElement;
+          if (parentEl) {
+            const cites = parentEl.dataset.cites;
+            if (cites) {
+              return {
+                el,
+                cites: cites.split(' ')
+              };
+            } else {
+              return findCites(el.parentElement)
+            }
+          } else {
+            return undefined;
+          }
+        };
+        var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+        for (var i=0; i<bibliorefs.length; i++) {
+          const ref = bibliorefs[i];
+          const citeInfo = findCites(ref);
+          if (citeInfo) {
+            tippyHover(citeInfo.el, function() {
+              var popup = window.document.createElement('div');
+              citeInfo.cites.forEach(function(cite) {
+                var citeDiv = window.document.createElement('div');
+                citeDiv.classList.add('hanging-indent');
+                citeDiv.classList.add('csl-entry');
+                var biblioDiv = window.document.getElementById('ref-' + cite);
+                if (biblioDiv) {
+                  citeDiv.innerHTML = biblioDiv.innerHTML;
+                }
+                popup.appendChild(citeDiv);
+              });
+              return popup.innerHTML;
+            });
+          }
+        }
+      });
+      </script>
+    
+
+</body></html>
