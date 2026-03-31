@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Matching Dashboard</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">Central Office MVP</p>
+        <h1>Hospital Matching Dashboard</h1>
+        <p class="lede">
+          Students submit preferences for their pre-assigned role, then the admin reviews
+          completion and runs the deferred-acceptance allocation from one place.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Connection</h2>
+          <div class="badge-row">
+            <span id="connection-badge" class="badge muted">Public API not checked</span>
+            <span id="admin-badge" class="badge muted">Admin locked</span>
+          </div>
+        </div>
+        <div class="grid two">
+          <label>
+            <span>API base URL</span>
+            <input id="api-base" type="url" placeholder="http://localhost:8787">
+          </label>
+          <label>
+            <span>Admin key</span>
+            <input id="admin-key" type="password" placeholder="Needed only for the admin panel">
+          </label>
+        </div>
+        <div class="actions">
+          <button id="save-settings" class="button primary">Save settings</button>
+          <button id="check-connection" class="button">Check connection</button>
+          <button id="refresh-state" class="button">Refresh everything</button>
+        </div>
+        <p class="hint">
+          Public routes are for student submissions. Full rankings, submission status, and the run controls sit behind the admin key.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Participant Submission</h2>
+          <span id="participant-market-badge" class="badge muted">No market loaded</span>
+        </div>
+        <div class="grid two">
+          <label>
+            <span>Role side</span>
+            <select id="participant-role-type">
+              <option value="candidate">Candidate / student</option>
+              <option value="hospital">Hospital</option>
+            </select>
+          </label>
+          <label>
+            <span>Your assigned role</span>
+            <select id="participant-role-id"></select>
+          </label>
+        </div>
+        <div class="card role-builder">
+          <div class="split-header">
+            <div>
+              <h3 id="participant-role-title">Choose your assigned role</h3>
+              <p id="participant-role-meta" class="ranking-meta">
+                The opposite-side options will appear here once a role is selected.
+              </p>
+            </div>
+            <span id="participant-role-badge" class="badge muted">No submission</span>
+          </div>
+          <p class="hint">
+            Use the arrow buttons to rank every option from most preferred to least preferred, then submit.
+          </p>
+          <div id="participant-ranking-list" class="choice-list"></div>
+          <div class="actions">
+            <button id="participant-submit" class="button primary">Submit preferences</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Admin Panel</h2>
+          <span id="market-summary" class="badge muted">Admin state unavailable</span>
+        </div>
+        <div id="admin-summary" class="grid three summary-grid"></div>
+        <div class="actions wrap">
+          <button id="load-demo" class="button primary">Load textbook demo</button>
+          <button id="run-hospital" class="button">Run hospital-proposing DA</button>
+          <button id="run-candidate" class="button">Run candidate-proposing DA</button>
+          <button id="reset-market" class="button danger">Reset market</button>
+        </div>
+        <p class="hint">
+          The admin panel shows which roles have submitted and runs the centralized algorithm once the market is ready.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Submission Status</h2>
+        </div>
+        <div class="grid two">
+          <div class="card">
+            <h3>Hospitals</h3>
+            <div id="hospital-submission-table"></div>
+          </div>
+          <div class="card">
+            <h3>Candidates</h3>
+            <div id="candidate-submission-table"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Entities</h2>
+        </div>
+        <div class="grid two">
+          <form id="hospital-form" class="card form-card">
+            <h3>Add or update hospital</h3>
+            <label>
+              <span>ID</span>
+              <input id="hospital-id" type="text" placeholder="hopkins">
+            </label>
+            <label>
+              <span>Name</span>
+              <input id="hospital-name" type="text" placeholder="Hopkins">
+            </label>
+            <label>
+              <span>Capacity</span>
+              <input id="hospital-capacity" type="number" min="0" value="1">
+            </label>
+            <button type="submit" class="button primary">Save hospital</button>
+          </form>
+
+          <form id="candidate-form" class="card form-card">
+            <h3>Add or update candidate</h3>
+            <label>
+              <span>ID</span>
+              <input id="candidate-id" type="text" placeholder="alice">
+            </label>
+            <label>
+              <span>Name</span>
+              <input id="candidate-name" type="text" placeholder="Alice">
+            </label>
+            <button type="submit" class="button primary">Save candidate</button>
+          </form>
+        </div>
+        <div class="grid two">
+          <div class="card">
+            <h3>Hospitals</h3>
+            <div id="hospital-table"></div>
+          </div>
+          <div class="card">
+            <h3>Candidates</h3>
+            <div id="candidate-table"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Admin Ranking Overrides</h2>
+        </div>
+        <div class="grid two">
+          <div class="card">
+            <h3>Hospital rankings</h3>
+            <div id="hospital-rankings"></div>
+          </div>
+          <div class="card">
+            <h3>Candidate rankings</h3>
+            <div id="candidate-rankings"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Market Snapshot</h2>
+        </div>
+        <p class="hint">
+          Use this only for admin setup, bulk edits, or importing a prepared classroom market.
+        </p>
+        <textarea id="snapshot" class="snapshot" spellcheck="false"></textarea>
+        <div class="actions">
+          <button id="export-snapshot" class="button">Export current state</button>
+          <button id="import-snapshot" class="button primary">Replace state from snapshot</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Latest Run</h2>
+          <span id="stability-badge" class="badge muted">No run yet</span>
+        </div>
+        <div id="run-summary" class="grid three summary-grid"></div>
+        <div class="grid two">
+          <div class="card">
+            <h3>Hospital matches</h3>
+            <div id="matches-table"></div>
+          </div>
+          <div class="card">
+            <h3>Blocking pairs</h3>
+            <div id="blocking-pairs"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Trace</h3>
+          <div id="trace-table"></div>
+        </div>
+      </section>
+
+      <section class="panel status-panel">
+        <div class="panel-header">
+          <h2>Status</h2>
+        </div>
+        <pre id="status-log">Ready.</pre>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
