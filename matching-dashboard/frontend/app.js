@@ -87,15 +87,15 @@ function saveSettings() {
 function loadSettings() {
   const raw = localStorage.getItem(SETTINGS_KEY);
   if (!raw) {
-    elements.apiBase.value = "http://localhost:8787";
+    elements.apiBase.value = "https://matching.visiometrica.com";
     return;
   }
   try {
     const parsed = JSON.parse(raw);
-    elements.apiBase.value = parsed.apiBase || "http://localhost:8787";
+    elements.apiBase.value = parsed.apiBase || "https://matching.visiometrica.com";
     elements.adminKey.value = parsed.adminKey || "";
   } catch {
-    elements.apiBase.value = "http://localhost:8787";
+    elements.apiBase.value = "https://matching.visiometrica.com";
   }
 }
 
