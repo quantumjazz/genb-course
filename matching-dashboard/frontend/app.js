@@ -93,17 +93,17 @@ function saveSettings() {
 function loadSettings() {
   const raw = localStorage.getItem(SETTINGS_KEY);
   if (!raw) {
-    elements.apiBase.value = "https://matching.visiometrica.com";
+    elements.apiBase.value = "";
     return;
   }
   try {
     const parsed = JSON.parse(raw);
-    elements.apiBase.value = parsed.apiBase || "https://matching.visiometrica.com";
+    elements.apiBase.value = parsed.apiBase || "";
     elements.adminKey.value = parsed.adminKey || "";
     elements.participantRoleType.value = parsed.participantRoleType || "candidate";
     elements.participantName.value = parsed.participantName || "";
   } catch {
-    elements.apiBase.value = "https://matching.visiometrica.com";
+    elements.apiBase.value = "";
   }
 }
 
@@ -112,6 +112,13 @@ function getApiBase() {
 }
 
 async function request(path, options = {}, includeAdmin = false) {
+  const apiBase = getApiBase();
+  if (!apiBase) {
+    throw new Error("Set the API base URL first.");
+  }
+  if (window.location.protocol === "https:" && apiBase.startsWith("http://")) {
+    throw new Error("This page is on HTTPS, so the API base URL must also use HTTPS.");
+  }
   const headers = new Headers(options.headers || {});
   if (options.body !== undefined) {
     headers.set("Content-Type", "application/json");
@@ -119,7 +126,7 @@ async function request(path, options = {}, includeAdmin = false) {
   if (includeAdmin && elements.adminKey.value.trim()) {
     headers.set("X-Admin-Key", elements.adminKey.value.trim());
   }
-  const response = await fetch(`${getApiBase()}${path}`, {
+  const response = await fetch(`${apiBase}${path}`, {
     ...options,
     headers,
   });
@@ -264,9 +271,12 @@ function renderParticipantPanel() {
 
   if (!state.participantRole) {
     elements.participantRoleTitle.textContent = "Choose your role and enter your name";
-    elements.participantRoleMeta.textContent = "Start or resume your entry to see the opposite-side options.";
+    elements.participantRoleMeta.textContent = state.publicMarket
+      ? "Start or resume your entry to see the opposite-side options."
+      : "Set the API base URL, click Check connection, and make sure the backend is reachable.";
     elements.participantRoleBadge.textContent = "No submission";
     elements.participantRoleBadge.className = "badge muted";
+    elements.participantLoad.disabled = !state.publicMarket;
     elements.participantSubmit.disabled = true;
     renderParticipantRoleChoices();
     return;
@@ -279,6 +289,7 @@ function renderParticipantPanel() {
   elements.participantRoleMeta.textContent = `${role.id}${capacityText}. Last submission: ${formatDate(state.participantRole.submittedAt)}.`;
   elements.participantRoleBadge.textContent = state.participantRole.submittedAt ? "Submitted" : "Draft only";
   elements.participantRoleBadge.className = state.participantRole.submittedAt ? "badge ok" : "badge warn";
+  elements.participantLoad.disabled = false;
   elements.participantSubmit.disabled = state.participantRankingOrder.length === 0;
   renderParticipantRoleChoices();
 }
