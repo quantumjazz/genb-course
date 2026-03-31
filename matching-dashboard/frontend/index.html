@@ -30,16 +30,25 @@
             <span>API base URL</span>
             <input id="api-base" type="url" placeholder="http://localhost:8787">
           </label>
-          <label>
-            <span>Admin key</span>
-            <input id="admin-key" type="password" placeholder="Needed only for the admin panel">
-          </label>
         </div>
         <div class="actions">
           <button id="save-settings" class="button primary">Save settings</button>
           <button id="check-connection" class="button">Check connection</button>
           <button id="refresh-state" class="button">Refresh everything</button>
         </div>
+        <details class="admin-access">
+          <summary>Admin access</summary>
+          <div class="admin-access-body">
+            <label>
+              <span>Admin key</span>
+              <input id="admin-key" type="password" placeholder="Needed only for the admin panel">
+            </label>
+            <div class="actions">
+              <button id="unlock-admin" class="button primary">Unlock admin</button>
+              <button id="lock-admin" class="button">Lock admin</button>
+            </div>
+          </div>
+        </details>
         <p class="hint">
           Public routes are for student submissions. Full rankings, submission status, and the run controls sit behind the admin key.
         </p>
@@ -59,31 +68,32 @@
             </select>
           </label>
           <label>
-            <span>Your assigned role</span>
-            <select id="participant-role-id"></select>
+            <span>Your name</span>
+            <input id="participant-name" type="text" placeholder="Enter your name">
           </label>
         </div>
         <div class="card role-builder">
           <div class="split-header">
             <div>
-              <h3 id="participant-role-title">Choose your assigned role</h3>
+              <h3 id="participant-role-title">Choose your role and enter your name</h3>
               <p id="participant-role-meta" class="ranking-meta">
-                The opposite-side options will appear here once a role is selected.
+                Your opposite-side options will appear here once you start or resume your entry.
               </p>
             </div>
             <span id="participant-role-badge" class="badge muted">No submission</span>
           </div>
           <p class="hint">
-            Use the arrow buttons to rank every option from most preferred to least preferred, then submit.
+            Pick a side, enter your name, then rank every opposite-side option from most preferred to least preferred.
           </p>
           <div id="participant-ranking-list" class="choice-list"></div>
           <div class="actions">
+            <button id="participant-load" class="button">Start or continue</button>
             <button id="participant-submit" class="button primary">Submit preferences</button>
           </div>
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel admin-only" hidden>
         <div class="panel-header">
           <h2>Admin Panel</h2>
           <span id="market-summary" class="badge muted">Admin state unavailable</span>
@@ -100,7 +110,7 @@
         </p>
       </section>
 
-      <section class="panel">
+      <section class="panel admin-only" hidden>
         <div class="panel-header">
           <h2>Submission Status</h2>
         </div>
@@ -116,7 +126,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel admin-only" hidden>
         <div class="panel-header">
           <h2>Entities</h2>
         </div>
@@ -163,7 +173,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel admin-only" hidden>
         <div class="panel-header">
           <h2>Admin Ranking Overrides</h2>
         </div>
@@ -179,7 +189,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel admin-only" hidden>
         <div class="panel-header">
           <h2>Market Snapshot</h2>
         </div>
@@ -193,7 +203,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel admin-only" hidden>
         <div class="panel-header">
           <h2>Latest Run</h2>
           <span id="stability-badge" class="badge muted">No run yet</span>

@@ -26,7 +26,7 @@ For a classroom or pilot, this is realistic. For anything public-facing, add TLS
 
 - hospitals with capacities;
 - candidates with one seat each;
-- participant submissions for pre-assigned roles;
+- participant self-registration by role and name;
 - a public submission flow for students plus an admin control panel;
 - incomplete rankings;
 - hospital-proposing deferred acceptance;
@@ -36,12 +36,12 @@ For a classroom or pilot, this is realistic. For anything public-facing, add TLS
 
 ## Student And Admin Workflow
 
-1. The admin defines the market: hospitals, candidates, and capacities.
-2. Each student opens the frontend, selects the role assigned to them beforehand, and submits a ranking.
-3. The admin panel tracks which hospital and candidate roles have submitted.
-4. The admin runs the centralized allocation once the market is ready.
+1. Students open the frontend, choose a side, enter their name, and start or resume their own entry.
+2. If that name has not appeared on that side yet, the backend creates the role automatically. If it already exists, the same record is reopened.
+3. Students rank the opposite side and submit their preferences.
+4. The admin unlocks the hidden admin panels with the shared admin key, reviews submission status, and runs the centralized allocation once the market is ready.
 
-The current submission flow is intentionally lightweight: it trusts students to choose their assigned role. If you need stronger control, the next step is per-role access codes or authenticated logins.
+The current submission flow is intentionally lightweight: it trusts students not to impersonate each other by reusing the same name on the same side. If you need stronger control, the next step is per-role access codes or authenticated logins.
 
 ## What It Does Not Support Yet
 

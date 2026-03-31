@@ -7,11 +7,12 @@ const elements = {
   adminBadge: document.getElementById("admin-badge"),
   participantMarketBadge: document.getElementById("participant-market-badge"),
   participantRoleType: document.getElementById("participant-role-type"),
-  participantRoleId: document.getElementById("participant-role-id"),
+  participantName: document.getElementById("participant-name"),
   participantRoleTitle: document.getElementById("participant-role-title"),
   participantRoleMeta: document.getElementById("participant-role-meta"),
   participantRoleBadge: document.getElementById("participant-role-badge"),
   participantRankingList: document.getElementById("participant-ranking-list"),
+  participantLoad: document.getElementById("participant-load"),
   participantSubmit: document.getElementById("participant-submit"),
   marketSummary: document.getElementById("market-summary"),
   adminSummary: document.getElementById("admin-summary"),
@@ -35,6 +36,9 @@ const elements = {
   hospitalCapacity: document.getElementById("hospital-capacity"),
   candidateId: document.getElementById("candidate-id"),
   candidateName: document.getElementById("candidate-name"),
+  unlockAdmin: document.getElementById("unlock-admin"),
+  lockAdmin: document.getElementById("lock-admin"),
+  adminSections: Array.from(document.querySelectorAll(".admin-only")),
 };
 
 const state = {
@@ -80,6 +84,8 @@ function saveSettings() {
     JSON.stringify({
       apiBase: elements.apiBase.value.trim(),
       adminKey: elements.adminKey.value,
+      participantRoleType: elements.participantRoleType.value,
+      participantName: elements.participantName.value.trim(),
     }),
   );
 }
@@ -94,6 +100,8 @@ function loadSettings() {
     const parsed = JSON.parse(raw);
     elements.apiBase.value = parsed.apiBase || "https://matching.visiometrica.com";
     elements.adminKey.value = parsed.adminKey || "";
+    elements.participantRoleType.value = parsed.participantRoleType || "candidate";
+    elements.participantName.value = parsed.participantName || "";
   } catch {
     elements.apiBase.value = "https://matching.visiometrica.com";
   }
@@ -153,15 +161,6 @@ function summaryBox(label, value) {
   return `<div class="summary-box"><span class="muted-text">${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
 }
 
-function currentRoleCollection() {
-  if (!state.publicMarket) {
-    return [];
-  }
-  return elements.participantRoleType.value === "hospital"
-    ? state.publicMarket.hospitals
-    : state.publicMarket.candidates;
-}
-
 function currentRoleOptionsById() {
   const role = state.participantRole;
   if (!role) {
@@ -211,9 +210,21 @@ function renderConnectionBadges() {
   }
 }
 
+function renderAdminVisibility() {
+  const unlocked = Boolean(state.adminData);
+  elements.adminSections.forEach((section) => {
+    section.hidden = !unlocked;
+  });
+}
+
 function renderParticipantRoleChoices() {
   if (!state.participantRole) {
-    elements.participantRankingList.innerHTML = `<p class="empty">Select your assigned role to enter preferences.</p>`;
+    elements.participantRankingList.innerHTML = `<p class="empty">Enter your name and start your entry to rank preferences.</p>`;
+    return;
+  }
+
+  if (!state.participantRankingOrder.length) {
+    elements.participantRankingList.innerHTML = `<p class="empty">No opposite-side roles exist yet. Wait for the other side to join or ask the admin to seed the market.</p>`;
     return;
   }
 
@@ -251,24 +262,12 @@ function renderParticipantPanel() {
     elements.participantMarketBadge.className = "badge";
   }
 
-  const roles = currentRoleCollection();
-  const currentValue = elements.participantRoleId.value;
-  if (!roles.length) {
-    elements.participantRoleId.innerHTML = `<option value="">No roles available</option>`;
-  } else {
-    elements.participantRoleId.innerHTML = roles
-      .map((role) => `<option value="${escapeHtml(role.id)}">${escapeHtml(role.name)} (${escapeHtml(role.id)})</option>`)
-      .join("");
-    if (roles.some((role) => role.id === currentValue)) {
-      elements.participantRoleId.value = currentValue;
-    }
-  }
-
   if (!state.participantRole) {
-    elements.participantRoleTitle.textContent = "Choose your assigned role";
-    elements.participantRoleMeta.textContent = "The opposite-side options will appear here once a role is selected.";
+    elements.participantRoleTitle.textContent = "Choose your role and enter your name";
+    elements.participantRoleMeta.textContent = "Start or resume your entry to see the opposite-side options.";
     elements.participantRoleBadge.textContent = "No submission";
     elements.participantRoleBadge.className = "badge muted";
+    elements.participantSubmit.disabled = true;
     renderParticipantRoleChoices();
     return;
   }
@@ -280,6 +279,7 @@ function renderParticipantPanel() {
   elements.participantRoleMeta.textContent = `${role.id}${capacityText}. Last submission: ${formatDate(state.participantRole.submittedAt)}.`;
   elements.participantRoleBadge.textContent = state.participantRole.submittedAt ? "Submitted" : "Draft only";
   elements.participantRoleBadge.className = state.participantRole.submittedAt ? "badge ok" : "badge warn";
+  elements.participantSubmit.disabled = state.participantRankingOrder.length === 0;
   renderParticipantRoleChoices();
 }
 
@@ -512,6 +512,7 @@ function renderRun() {
 
 function renderAll() {
   renderConnectionBadges();
+  renderAdminVisibility();
   renderParticipantPanel();
   renderAdminSummary();
   renderSubmissionStatus();
@@ -542,47 +543,40 @@ async function refreshAdminState({ quiet = false } = {}) {
   }
 }
 
-async function refreshSelectedParticipantRole({ quiet = false } = {}) {
+async function registerParticipant({ quiet = false } = {}) {
   const roleType = elements.participantRoleType.value;
-  const roleId = elements.participantRoleId.value;
-  if (!roleId) {
+  const name = elements.participantName.value.trim();
+  if (!name) {
     state.participantRole = null;
     state.participantRankingOrder = [];
+    if (!quiet) {
+      throw new Error("Enter your name before starting your entry.");
+    }
     return;
   }
-  state.participantRole = await publicApi(
-    `/api/public/role?roleType=${encodeURIComponent(roleType)}&roleId=${encodeURIComponent(roleId)}`,
-    { method: "GET" },
-  );
+  state.participantRole = await publicApi("/api/public/register", {
+    method: "POST",
+    body: JSON.stringify({
+      roleType,
+      name,
+    }),
+  });
   state.participantRankingOrder = normalizeParticipantOrder(state.participantRole);
+  elements.participantName.value = state.participantRole.role.name;
+  saveSettings();
   if (!quiet) {
-    log(`Loaded ${roleLabel(roleType).toLowerCase()} role '${roleId}'.`);
-  }
-}
-
-function syncRoleSelectorOptions() {
-  const roles = currentRoleCollection();
-  const currentValue = elements.participantRoleId.value;
-  if (!roles.length) {
-    elements.participantRoleId.innerHTML = `<option value="">No roles available</option>`;
-    return;
-  }
-  elements.participantRoleId.innerHTML = roles
-    .map((role) => `<option value="${escapeHtml(role.id)}">${escapeHtml(role.name)} (${escapeHtml(role.id)})</option>`)
-    .join("");
-  if (roles.some((role) => role.id === currentValue)) {
-    elements.participantRoleId.value = currentValue;
+    log(
+      `${state.participantRole.created ? "Created" : "Loaded"} ${roleLabel(roleType).toLowerCase()} entry '${state.participantRole.role.name}'.`,
+    );
   }
 }
 
 async function refreshAll({ quiet = false } = {}) {
   await refreshPublicMarket({ quiet: true });
-  syncRoleSelectorOptions();
   await refreshAdminState({ quiet: true });
-  const selectedRoleId = elements.participantRoleId.value;
-  if (selectedRoleId) {
+  if (elements.participantName.value.trim()) {
     try {
-      await refreshSelectedParticipantRole({ quiet: true });
+      await registerParticipant({ quiet: true });
     } catch (error) {
       state.participantRole = null;
       state.participantRankingOrder = [];
@@ -613,7 +607,7 @@ function moveParticipantChoice(index, direction) {
 
 async function submitParticipantRanking() {
   if (!state.participantRole) {
-    log("Choose your assigned role before submitting preferences.");
+    log("Choose your side, enter your name, and start your entry before submitting preferences.");
     return;
   }
   const payload = await publicApi("/api/public/submit", {
@@ -666,31 +660,51 @@ function attachHandlers() {
     }
   });
 
-  elements.participantRoleType.addEventListener("change", async () => {
-    syncRoleSelectorOptions();
+  elements.unlockAdmin.addEventListener("click", async () => {
     try {
-      await refreshSelectedParticipantRole();
+      saveSettings();
+      await refreshAdminState();
+      renderAll();
     } catch (error) {
-      state.participantRole = null;
-      state.participantRankingOrder = [];
       renderAll();
       log(error.message);
-      return;
     }
+  });
+
+  elements.lockAdmin.addEventListener("click", () => {
+    elements.adminKey.value = "";
+    state.adminData = null;
+    saveSettings();
+    renderAll();
+    log("Admin session cleared from this browser.");
+  });
+
+  elements.participantRoleType.addEventListener("change", () => {
+    state.participantRole = null;
+    state.participantRankingOrder = [];
+    saveSettings();
     renderAll();
   });
 
-  elements.participantRoleId.addEventListener("change", async () => {
+  elements.participantName.addEventListener("input", () => {
+    state.participantRole = null;
+    state.participantRankingOrder = [];
+    saveSettings();
+    renderAll();
+  });
+
+  elements.participantLoad.addEventListener("click", async () => {
     try {
-      await refreshSelectedParticipantRole();
+      await registerParticipant();
+      await refreshPublicMarket({ quiet: true });
+      await refreshAdminState({ quiet: true });
+      renderAll();
     } catch (error) {
       state.participantRole = null;
       state.participantRankingOrder = [];
       renderAll();
       log(error.message);
-      return;
     }
-    renderAll();
   });
 
   elements.participantSubmit.addEventListener("click", async () => {

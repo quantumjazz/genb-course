@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import sqlite3
 from collections import deque
 from datetime import datetime, timezone
@@ -41,6 +42,20 @@ def split_ids(raw):
         values.append(cleaned)
         seen.add(cleaned)
     return values
+
+
+def normalize_name(value):
+    if not isinstance(value, str):
+        raise ValueError("Name must be a string.")
+    cleaned = " ".join(value.split()).strip()
+    if not cleaned:
+        raise ValueError("Name cannot be empty.")
+    return cleaned
+
+
+def slugify(value):
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "participant"
 
 
 def build_rank_positions(rankings):
@@ -448,6 +463,42 @@ class MatchingStore:
         ).fetchone()
         return json.loads(latest_row["payload_json"]) if latest_row else None
 
+    def _find_role_by_name(self, connection, role_type, name):
+        if role_type == "hospital":
+            return connection.execute(
+                """
+                SELECT id, name, capacity
+                FROM hospitals
+                WHERE lower(name) = lower(?)
+                ORDER BY id
+                LIMIT 1
+                """,
+                (name,),
+            ).fetchone()
+        if role_type == "candidate":
+            return connection.execute(
+                """
+                SELECT id, name
+                FROM candidates
+                WHERE lower(name) = lower(?)
+                ORDER BY id
+                LIMIT 1
+                """,
+                (name,),
+            ).fetchone()
+        raise ValueError("roleType must be 'hospital' or 'candidate'.")
+
+    def _next_available_id(self, connection, table_name, base_id):
+        candidate_id = base_id
+        suffix = 2
+        while connection.execute(
+            f"SELECT 1 FROM {table_name} WHERE id = ?",
+            (candidate_id,),
+        ).fetchone():
+            candidate_id = f"{base_id}-{suffix}"
+            suffix += 1
+        return candidate_id
+
     def _build_submission_summary(self, hospitals, candidates, hospital_rankings, candidate_rankings, submissions):
         hospital_statuses = []
         for hospital in hospitals:
@@ -608,6 +659,46 @@ class MatchingStore:
             "submittedAt": metadata["submittedAt"] if metadata else None,
             "source": metadata["source"] if metadata else ("legacy" if ranking else None),
         }
+
+    def register_public_role(self, role_type, name, capacity=1):
+        role_type = str(role_type).strip().lower()
+        name = normalize_name(name)
+
+        if role_type == "hospital":
+            try:
+                capacity = int(capacity)
+            except (TypeError, ValueError):
+                raise ValueError("Hospital capacity must be an integer.")
+            if capacity < 1:
+                raise ValueError("Hospital capacity must be at least 1.")
+        elif role_type != "candidate":
+            raise ValueError("roleType must be 'hospital' or 'candidate'.")
+
+        with self._connect() as connection:
+            existing = self._find_role_by_name(connection, role_type, name)
+            created = False
+            if existing is not None:
+                role_id = existing["id"]
+            elif role_type == "hospital":
+                role_id = self._next_available_id(connection, "hospitals", slugify(name))
+                connection.execute(
+                    "INSERT INTO hospitals (id, name, capacity) VALUES (?, ?, ?)",
+                    (role_id, name, capacity),
+                )
+                self._invalidate_runs(connection)
+                created = True
+            else:
+                role_id = self._next_available_id(connection, "candidates", slugify(name))
+                connection.execute(
+                    "INSERT INTO candidates (id, name) VALUES (?, ?)",
+                    (role_id, name),
+                )
+                self._invalidate_runs(connection)
+                created = True
+
+        payload = self.export_public_role(role_type, role_id)
+        payload["created"] = created
+        return payload
 
     def upsert_hospital(self, hospital_id, name, capacity):
         if not isinstance(capacity, int) or capacity < 0:
@@ -845,23 +936,26 @@ class MatchingHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/api/health":
-            self._respond_json({"ok": True, "time": utc_now()})
-            return
-        if parsed.path == "/api/state":
-            self._require_admin()
-            self._respond_json(self.app.store.export_state())
-            return
-        if parsed.path == "/api/public/market":
-            self._respond_json(self.app.store.export_public_market())
-            return
-        if parsed.path == "/api/public/role":
-            query = parse_qs(parsed.query)
-            role_type = query.get("roleType", [""])[0].strip().lower()
-            role_id = query.get("roleId", [""])[0].strip()
-            self._respond_json(self.app.store.export_public_role(role_type, role_id))
-            return
-        self._respond_json({"error": "Not found."}, status=404)
+        try:
+            if parsed.path == "/api/health":
+                self._respond_json({"ok": True, "time": utc_now()})
+                return
+            if parsed.path == "/api/state":
+                self._require_admin()
+                self._respond_json(self.app.store.export_state())
+                return
+            if parsed.path == "/api/public/market":
+                self._respond_json(self.app.store.export_public_market())
+                return
+            if parsed.path == "/api/public/role":
+                query = parse_qs(parsed.query)
+                role_type = query.get("roleType", [""])[0].strip().lower()
+                role_id = query.get("roleId", [""])[0].strip()
+                self._respond_json(self.app.store.export_public_role(role_type, role_id))
+                return
+            self._respond_json({"error": "Not found."}, status=404)
+        except ValueError as exc:
+            self._respond_json({"error": str(exc)}, status=400)
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -876,6 +970,13 @@ class MatchingHandler(BaseHTTPRequestHandler):
                 self._require_admin()
                 self.app.store.load_demo()
                 self._respond_json(self.app.store.export_state())
+                return
+            if parsed.path == "/api/public/register":
+                role_type = str(body.get("roleType", "")).strip().lower()
+                name = body.get("name", "")
+                capacity = body.get("capacity", 1)
+                payload = self.app.store.register_public_role(role_type, name, capacity)
+                self._respond_json(payload)
                 return
             if parsed.path == "/api/public/submit":
                 role_type = str(body.get("roleType", "")).strip().lower()

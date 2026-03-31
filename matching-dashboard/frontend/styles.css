@@ -180,6 +180,24 @@ textarea {
   gap: 0.4rem;
 }
 
+.admin-access {
+  margin-top: 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.admin-access summary {
+  cursor: pointer;
+  padding: 0.95rem 1rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.admin-access-body {
+  padding: 0 1rem 1rem;
+}
+
 .button {
   padding: 0.8rem 1rem;
   border: 0;
