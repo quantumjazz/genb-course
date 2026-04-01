@@ -12,6 +12,7 @@
 
 - **Допълнителна лекция: Координация, мотивация и ефикасност на пазара на труда** — matching, NIMP, Roth & Shapley, дизайн на пазари
   [Слайдове](https://quantumjazz.github.io/genb-course/01-защо-съществуват-фирмите/matching-lecture#/title-slide)
+  [Дашборд](https://quantumjazz.github.io/genb-course/matching-dashboard/frontend/)
 
 ## Модул 2: Договори, рационалност и техните граници
 
