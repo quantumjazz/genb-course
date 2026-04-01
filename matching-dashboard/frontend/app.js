@@ -11,11 +11,26 @@ const elements = {
   participantRoleTitle: document.getElementById("participant-role-title"),
   participantRoleMeta: document.getElementById("participant-role-meta"),
   participantRoleBadge: document.getElementById("participant-role-badge"),
-  participantRankingList: document.getElementById("participant-ranking-list"),
+  participantRankingNote: document.getElementById("participant-ranking-note"),
+  participantPickerGrid: document.getElementById("participant-picker-grid"),
+  participantChoiceSearch: document.getElementById("participant-choice-search"),
+  participantAvailableList: document.getElementById("participant-available-list"),
+  participantSelectedList: document.getElementById("participant-selected-list"),
+  participantLimitBadge: document.getElementById("participant-limit-badge"),
+  participantSelectedCount: document.getElementById("participant-selected-count"),
   participantLoad: document.getElementById("participant-load"),
   participantSubmit: document.getElementById("participant-submit"),
   marketSummary: document.getElementById("market-summary"),
   adminSummary: document.getElementById("admin-summary"),
+  openRegistration: document.getElementById("open-registration"),
+  openRanking: document.getElementById("open-ranking"),
+  lockMarket: document.getElementById("lock-market"),
+  loadDemo: document.getElementById("load-demo"),
+  runHospital: document.getElementById("run-hospital"),
+  runCandidate: document.getElementById("run-candidate"),
+  resetMarket: document.getElementById("reset-market"),
+  hospitalSubmissionFilter: document.getElementById("hospital-submission-filter"),
+  candidateSubmissionFilter: document.getElementById("candidate-submission-filter"),
   hospitalSubmissionTable: document.getElementById("hospital-submission-table"),
   candidateSubmissionTable: document.getElementById("candidate-submission-table"),
   stabilityBadge: document.getElementById("stability-badge"),
@@ -25,6 +40,7 @@ const elements = {
   candidateRankings: document.getElementById("candidate-rankings"),
   snapshot: document.getElementById("snapshot"),
   runSummary: document.getElementById("run-summary"),
+  matchesFilter: document.getElementById("matches-filter"),
   matchesTable: document.getElementById("matches-table"),
   blockingPairs: document.getElementById("blocking-pairs"),
   traceTable: document.getElementById("trace-table"),
@@ -46,6 +62,7 @@ const state = {
   adminData: null,
   participantRole: null,
   participantRankingOrder: [],
+  participantChoiceQuery: "",
 };
 
 function escapeHtml(value) {
@@ -75,7 +92,20 @@ function formatDate(value) {
 }
 
 function roleLabel(roleType) {
-  return roleType === "hospital" ? "Hospital" : "Candidate";
+  return roleType === "hospital" ? "Hospital" : "Student";
+}
+
+function phaseLabel(phase) {
+  const labels = {
+    registration_open: "Registration open",
+    ranking_open: "Ranking open",
+    locked: "Locked",
+  };
+  return labels[phase] || "Unknown phase";
+}
+
+function getRankingLimit() {
+  return state.publicMarket?.rankingLimit || state.participantRole?.rankingLimit || 10;
 }
 
 function saveSettings() {
@@ -83,9 +113,6 @@ function saveSettings() {
     SETTINGS_KEY,
     JSON.stringify({
       apiBase: elements.apiBase.value.trim(),
-      adminKey: elements.adminKey.value,
-      participantRoleType: elements.participantRoleType.value,
-      participantName: elements.participantName.value.trim(),
     }),
   );
 }
@@ -99,9 +126,6 @@ function loadSettings() {
   try {
     const parsed = JSON.parse(raw);
     elements.apiBase.value = parsed.apiBase || "";
-    elements.adminKey.value = parsed.adminKey || "";
-    elements.participantRoleType.value = parsed.participantRoleType || "candidate";
-    elements.participantName.value = parsed.participantName || "";
   } catch {
     elements.apiBase.value = "";
   }
@@ -149,23 +173,33 @@ function renderTable(columns, rows) {
   if (!rows.length) {
     return `<p class="empty">Nothing here yet.</p>`;
   }
-  const header = columns.map((column) => `<th>${column.label}</th>`).join("");
+  const header = columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("");
   const body = rows
-    .map(
-      (row) =>
-        `<tr>${columns
-          .map((column) => {
-            const value = column.render ? column.render(row) : (row[column.key] ?? "");
-            return `<td>${escapeHtml(value)}</td>`;
-          })
-          .join("")}</tr>`,
-    )
+    .map((row) => {
+      const cells = columns
+        .map((column) => {
+          const value = column.render ? column.render(row) : (row[column.key] ?? "");
+          return `<td>${column.html ? value : escapeHtml(value)}</td>`;
+        })
+        .join("");
+      return `<tr>${cells}</tr>`;
+    })
     .join("");
   return `<table class="table"><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 function summaryBox(label, value) {
   return `<div class="summary-box"><span class="muted-text">${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+}
+
+function filterRows(rows, query, selectors) {
+  const cleaned = query.trim().toLowerCase();
+  if (!cleaned) {
+    return rows;
+  }
+  return rows.filter((row) =>
+    selectors.some((selector) => String(selector(row) ?? "").toLowerCase().includes(cleaned)),
+  );
 }
 
 function currentRoleOptionsById() {
@@ -176,24 +210,107 @@ function currentRoleOptionsById() {
   return Object.fromEntries(role.choices.map((choice) => [choice.id, choice]));
 }
 
-function normalizeParticipantOrder(rolePayload) {
+function normalizeParticipantRanking(rolePayload) {
+  const availableIds = new Set(rolePayload.choices.map((choice) => choice.id));
   const seen = new Set();
-  const availableIds = rolePayload.choices.map((choice) => choice.id);
-  const order = [];
-
+  const ranking = [];
+  const limit = rolePayload.rankingLimit || getRankingLimit();
   for (const choiceId of rolePayload.currentRanking || []) {
-    if (availableIds.includes(choiceId) && !seen.has(choiceId)) {
-      order.push(choiceId);
-      seen.add(choiceId);
+    if (!availableIds.has(choiceId) || seen.has(choiceId) || ranking.length >= limit) {
+      continue;
     }
+    ranking.push(choiceId);
+    seen.add(choiceId);
   }
-  for (const choiceId of availableIds) {
-    if (!seen.has(choiceId)) {
-      order.push(choiceId);
-      seen.add(choiceId);
+  return ranking;
+}
+
+function participantSelectionBadge() {
+  const selected = state.participantRankingOrder.length;
+  const limit = getRankingLimit();
+  elements.participantSelectedCount.textContent = `${selected} / ${limit}`;
+  elements.participantLimitBadge.textContent = `Top ${limit}`;
+}
+
+function renderParticipantChoiceItem(choice, actionsHtml, rankLabel = null) {
+  const capacityText = choice.capacity !== undefined ? `Capacity ${choice.capacity}` : roleLabel("candidate");
+  const rank = rankLabel ? `<span class="choice-rank">${rankLabel}</span>` : "";
+  return `
+    <div class="choice-item">
+      <div class="choice-main">
+        ${rank}
+        <div>
+          <strong>${escapeHtml(choice.name)}</strong>
+          <div class="muted-text">${escapeHtml(choice.id)} · ${escapeHtml(capacityText)}</div>
+        </div>
+      </div>
+      <div class="actions compact">
+        ${actionsHtml}
+      </div>
+    </div>
+  `;
+}
+
+function renderParticipantPicker(phase) {
+  participantSelectionBadge();
+  elements.participantChoiceSearch.value = state.participantChoiceQuery;
+  elements.participantChoiceSearch.disabled = phase !== "ranking_open";
+
+  if (!state.participantRole || !["ranking_open", "locked"].includes(phase)) {
+    elements.participantPickerGrid.hidden = true;
+    elements.participantAvailableList.innerHTML = "";
+    elements.participantSelectedList.innerHTML = "";
+    return;
+  }
+
+  const choicesById = currentRoleOptionsById();
+  const limit = getRankingLimit();
+  const selectedIds = new Set(state.participantRankingOrder);
+  const query = state.participantChoiceQuery.trim().toLowerCase();
+  const availableChoices = state.participantRole.choices.filter((choice) => {
+    if (selectedIds.has(choice.id)) {
+      return false;
     }
+    if (!query) {
+      return true;
+    }
+    return (
+      choice.name.toLowerCase().includes(query)
+      || choice.id.toLowerCase().includes(query)
+    );
+  });
+
+  elements.participantPickerGrid.hidden = false;
+  if (phase === "ranking_open") {
+    elements.participantAvailableList.innerHTML = availableChoices.length
+      ? availableChoices
+          .map((choice) =>
+            renderParticipantChoiceItem(
+              choice,
+              `<button class="button" data-add-choice="${escapeHtml(choice.id)}" ${state.participantRankingOrder.length >= limit ? "disabled" : ""}>Add</button>`,
+            ),
+          )
+          .join("")
+      : `<p class="empty">No matching options are available.</p>`;
+  } else {
+    elements.participantAvailableList.innerHTML = `<p class="empty">The market is locked. New choices cannot be added.</p>`;
   }
-  return order;
+
+  elements.participantSelectedList.innerHTML = state.participantRankingOrder.length
+    ? state.participantRankingOrder
+        .map((choiceId, index) => {
+          const choice = choicesById[choiceId];
+          const actions = phase === "ranking_open"
+            ? `
+                <button class="button" data-move-choice="${index}" data-direction="-1" ${index === 0 ? "disabled" : ""}>↑</button>
+                <button class="button" data-move-choice="${index}" data-direction="1" ${index === state.participantRankingOrder.length - 1 ? "disabled" : ""}>↓</button>
+                <button class="button" data-remove-choice="${escapeHtml(choice.id)}">Remove</button>
+              `
+            : "";
+          return renderParticipantChoiceItem(choice, actions, index + 1);
+        })
+        .join("")
+    : `<p class="empty">${phase === "ranking_open" ? "Add up to ten choices from the left." : "No ranking was submitted."}</p>`;
 }
 
 function renderConnectionBadges() {
@@ -224,61 +341,38 @@ function renderAdminVisibility() {
   });
 }
 
-function renderParticipantRoleChoices() {
-  if (!state.participantRole) {
-    elements.participantRankingList.innerHTML = `<p class="empty">Enter your name and start your entry to rank preferences.</p>`;
-    return;
-  }
-
-  if (!state.participantRankingOrder.length) {
-    elements.participantRankingList.innerHTML = `<p class="empty">No opposite-side roles exist yet. Wait for the other side to join or ask the admin to seed the market.</p>`;
-    return;
-  }
-
-  const choicesById = currentRoleOptionsById();
-  elements.participantRankingList.innerHTML = state.participantRankingOrder
-    .map((choiceId, index) => {
-      const choice = choicesById[choiceId];
-      const capacityText = choice.capacity !== undefined ? `, capacity ${choice.capacity}` : "";
-      return `
-        <div class="choice-item">
-          <div class="choice-main">
-            <span class="choice-rank">${index + 1}</span>
-            <div>
-              <strong>${escapeHtml(choice.name)}</strong>
-              <div class="muted-text">${escapeHtml(choice.id)}${escapeHtml(capacityText)}</div>
-            </div>
-          </div>
-          <div class="actions compact">
-            <button class="button" data-move-choice="${index}" data-direction="-1" ${index === 0 ? "disabled" : ""}>↑</button>
-            <button class="button" data-move-choice="${index}" data-direction="1" ${index === state.participantRankingOrder.length - 1 ? "disabled" : ""}>↓</button>
-          </div>
-        </div>
-      `;
-    })
-    .join("");
-}
-
 function renderParticipantPanel() {
-  const counts = state.publicMarket?.submissionCounts;
-  if (!state.publicMarket || !counts) {
+  const market = state.publicMarket;
+  const counts = market?.submissionCounts;
+  const phase = market?.phase;
+  if (!market || !counts) {
     elements.participantMarketBadge.textContent = "No market loaded";
     elements.participantMarketBadge.className = "badge muted";
   } else {
-    elements.participantMarketBadge.textContent = `Hospitals ${counts.hospitalsSubmitted}/${counts.hospitalsTotal}, candidates ${counts.candidatesSubmitted}/${counts.candidatesTotal}`;
+    elements.participantMarketBadge.textContent = `${phaseLabel(phase)} · Hospitals ${counts.hospitalsSubmitted}/${counts.hospitalsTotal} · Students ${counts.candidatesSubmitted}/${counts.candidatesTotal}`;
     elements.participantMarketBadge.className = "badge";
   }
 
   if (!state.participantRole) {
     elements.participantRoleTitle.textContent = "Choose your role and enter your name";
-    elements.participantRoleMeta.textContent = state.publicMarket
-      ? "Start or resume your entry to see the opposite-side options."
-      : "Set the API base URL, click Check connection, and make sure the backend is reachable.";
-    elements.participantRoleBadge.textContent = "No submission";
+    if (!market) {
+      elements.participantRoleMeta.textContent = "Set the API base URL, check the connection, and make sure the backend is reachable.";
+      elements.participantRankingNote.textContent = "";
+    } else if (phase === "registration_open") {
+      elements.participantRoleMeta.textContent = "Register now to claim one role in the market.";
+      elements.participantRankingNote.textContent = "Ranking opens only after the admin closes registration.";
+    } else if (phase === "ranking_open") {
+      elements.participantRoleMeta.textContent = "Registration is closed. Previously registered participants can reopen their entry with the same role and name.";
+      elements.participantRankingNote.textContent = "You can only submit rankings for an existing entry during this phase.";
+    } else {
+      elements.participantRoleMeta.textContent = "The market is locked.";
+      elements.participantRankingNote.textContent = "Public submissions are closed until the admin reopens the market.";
+    }
+    elements.participantRoleBadge.textContent = "No entry";
     elements.participantRoleBadge.className = "badge muted";
-    elements.participantLoad.disabled = !state.publicMarket;
+    elements.participantLoad.disabled = !market;
     elements.participantSubmit.disabled = true;
-    renderParticipantRoleChoices();
+    renderParticipantPicker(null);
     return;
   }
 
@@ -286,12 +380,34 @@ function renderParticipantPanel() {
   const side = roleLabel(state.participantRole.roleType);
   const capacityText = role.capacity !== undefined ? `, capacity ${role.capacity}` : "";
   elements.participantRoleTitle.textContent = `${side}: ${role.name}`;
-  elements.participantRoleMeta.textContent = `${role.id}${capacityText}. Last submission: ${formatDate(state.participantRole.submittedAt)}.`;
-  elements.participantRoleBadge.textContent = state.participantRole.submittedAt ? "Submitted" : "Draft only";
-  elements.participantRoleBadge.className = state.participantRole.submittedAt ? "badge ok" : "badge warn";
   elements.participantLoad.disabled = false;
-  elements.participantSubmit.disabled = state.participantRankingOrder.length === 0;
-  renderParticipantRoleChoices();
+
+  if (phase === "registration_open") {
+    elements.participantRoleMeta.textContent = `${role.id}${capacityText}. Registration saved. Ranking will open after the admin closes registration.`;
+    elements.participantRoleBadge.textContent = "Registered";
+    elements.participantRoleBadge.className = "badge ok";
+    elements.participantRankingNote.textContent = "No rankings can be submitted during the registration phase.";
+    elements.participantSubmit.disabled = true;
+    renderParticipantPicker(null);
+    return;
+  }
+
+  if (phase === "ranking_open") {
+    elements.participantRoleMeta.textContent = `${role.id}${capacityText}. Choose up to ${getRankingLimit()} options in descending order. Last submission: ${formatDate(state.participantRole.submittedAt)}.`;
+    elements.participantRoleBadge.textContent = state.participantRole.submittedAt ? "Submitted" : "Ready to rank";
+    elements.participantRoleBadge.className = state.participantRole.submittedAt ? "badge ok" : "badge warn";
+    elements.participantRankingNote.textContent = "Add up to ten options, then order them from best to worst.";
+    elements.participantSubmit.disabled = state.participantRankingOrder.length === 0;
+    renderParticipantPicker("ranking_open");
+    return;
+  }
+
+  elements.participantRoleMeta.textContent = `${role.id}${capacityText}. The market is locked. Last submission: ${formatDate(state.participantRole.submittedAt)}.`;
+  elements.participantRoleBadge.textContent = state.participantRole.submittedAt ? "Locked" : "Locked without submission";
+  elements.participantRoleBadge.className = state.participantRole.submittedAt ? "badge muted" : "badge warn";
+  elements.participantRankingNote.textContent = "Your final submitted list is shown below.";
+  elements.participantSubmit.disabled = true;
+  renderParticipantPicker("locked");
 }
 
 function renderAdminSummary() {
@@ -300,8 +416,9 @@ function renderAdminSummary() {
     elements.marketSummary.className = "badge muted";
     elements.adminSummary.innerHTML = [
       summaryBox("Admin access", "Unavailable"),
-      summaryBox("Reason", elements.adminKey.value.trim() ? "Check admin key" : "Enter admin key if required"),
+      summaryBox("Phase", "Unknown"),
       summaryBox("Public market", state.publicMarket ? "Loaded" : "Unavailable"),
+      summaryBox("Ranking limit", state.publicMarket?.rankingLimit || "n/a"),
     ].join("");
     return;
   }
@@ -310,13 +427,21 @@ function renderAdminSummary() {
   const candidates = state.adminData.candidates || [];
   const counts = state.adminData.submissionSummary.counts;
   const slotCount = hospitals.reduce((sum, hospital) => sum + Number(hospital.capacity || 0), 0);
-  elements.marketSummary.textContent = `${hospitals.length} hospitals, ${candidates.length} candidates, ${slotCount} slots`;
+  const phase = state.adminData.phase;
+  elements.marketSummary.textContent = `${phaseLabel(phase)} · ${hospitals.length} hospitals · ${candidates.length} students · ${slotCount} slots`;
   elements.marketSummary.className = "badge";
   elements.adminSummary.innerHTML = [
+    summaryBox("Phase", phaseLabel(phase)),
     summaryBox("Hospitals submitted", `${counts.hospitalsSubmitted}/${counts.hospitalsTotal}`),
-    summaryBox("Candidates submitted", `${counts.candidatesSubmitted}/${counts.candidatesTotal}`),
+    summaryBox("Students submitted", `${counts.candidatesSubmitted}/${counts.candidatesTotal}`),
     summaryBox("Latest run", state.adminData.latestRun ? new Date(state.adminData.latestRun.createdAt).toLocaleString() : "None"),
   ].join("");
+
+  elements.openRegistration.disabled = phase === "registration_open";
+  elements.openRanking.disabled = phase === "ranking_open";
+  elements.lockMarket.disabled = phase === "locked";
+  elements.runHospital.disabled = phase !== "locked";
+  elements.runCandidate.disabled = phase !== "locked";
 }
 
 function renderSubmissionStatus() {
@@ -326,26 +451,45 @@ function renderSubmissionStatus() {
     return;
   }
 
+  const hospitals = filterRows(
+    state.adminData.submissionSummary.hospitals,
+    elements.hospitalSubmissionFilter.value,
+    [
+      (row) => row.name,
+      (row) => row.id,
+      (row) => row.source || "",
+    ],
+  );
+  const candidates = filterRows(
+    state.adminData.submissionSummary.candidates,
+    elements.candidateSubmissionFilter.value,
+    [
+      (row) => row.name,
+      (row) => row.id,
+      (row) => row.source || "",
+    ],
+  );
+
   elements.hospitalSubmissionTable.innerHTML = renderTable(
     [
       { label: "Hospital", render: (row) => `${row.name} (${row.id})` },
-      { label: "Ranking", render: (row) => `${row.rankingCount}/${row.requiredCount}` },
+      { label: "Ranking", render: (row) => `${row.rankingCount}/${Math.min(row.requiredCount, getRankingLimit())}` },
       { label: "Submitted", render: (row) => (row.submitted ? "Yes" : "No") },
       { label: "Updated", render: (row) => formatDate(row.submittedAt) },
       { label: "Source", render: (row) => row.source || "—" },
     ],
-    state.adminData.submissionSummary.hospitals,
+    hospitals,
   );
 
   elements.candidateSubmissionTable.innerHTML = renderTable(
     [
-      { label: "Candidate", render: (row) => `${row.name} (${row.id})` },
-      { label: "Ranking", render: (row) => `${row.rankingCount}/${row.requiredCount}` },
+      { label: "Student", render: (row) => `${row.name} (${row.id})` },
+      { label: "Ranking", render: (row) => `${row.rankingCount}/${Math.min(row.requiredCount, getRankingLimit())}` },
       { label: "Submitted", render: (row) => (row.submitted ? "Yes" : "No") },
       { label: "Updated", render: (row) => formatDate(row.submittedAt) },
       { label: "Source", render: (row) => row.source || "—" },
     ],
-    state.adminData.submissionSummary.candidates,
+    candidates,
   );
 }
 
@@ -358,6 +502,11 @@ function renderEntities() {
       { label: "ID", key: "id" },
       { label: "Name", key: "name" },
       { label: "Capacity", key: "capacity" },
+      {
+        label: "Actions",
+        html: true,
+        render: (row) => `<button class="button danger-inline" data-remove-role="hospital" data-role-id="${escapeHtml(row.id)}" data-role-label="${escapeHtml(row.name)}">Remove</button>`,
+      },
     ],
     hospitals,
   );
@@ -366,6 +515,11 @@ function renderEntities() {
     [
       { label: "ID", key: "id" },
       { label: "Name", key: "name" },
+      {
+        label: "Actions",
+        html: true,
+        render: (row) => `<button class="button danger-inline" data-remove-role="candidate" data-role-id="${escapeHtml(row.id)}" data-role-label="${escapeHtml(row.name)}">Remove</button>`,
+      },
     ],
     candidates,
   );
@@ -400,7 +554,7 @@ function renderRankingEditors() {
           (hospital) => `
             <div class="ranking-card">
               <h4>${escapeHtml(hospital.name)} <span class="muted-text">(${escapeHtml(hospital.id)})</span></h4>
-              <p class="ranking-meta">Candidate IDs in descending order. Available: ${escapeHtml(candidates.map((candidate) => candidate.id).join(", ") || "none")}.</p>
+              <p class="ranking-meta">Student IDs in descending order. Available: ${escapeHtml(candidates.map((candidate) => candidate.id).join(", ") || "none")}.</p>
               <textarea data-ranking-type="hospital" data-entity-id="${escapeHtml(hospital.id)}">${escapeHtml(orderedText(hospitalRankings[hospital.id] || []))}</textarea>
               <div class="actions">
                 <button class="button primary" data-save-ranking="hospital" data-entity-id="${escapeHtml(hospital.id)}">Save ranking</button>
@@ -426,7 +580,7 @@ function renderRankingEditors() {
           `,
         )
         .join("")
-    : `<p class="empty">Add at least one candidate first.</p>`;
+    : `<p class="empty">Add at least one student first.</p>`;
 }
 
 function renderSnapshot() {
@@ -436,6 +590,7 @@ function renderSnapshot() {
   }
   elements.snapshot.value = JSON.stringify(
     {
+      phase: state.adminData.phase,
       hospitals: state.adminData.hospitals,
       candidates: state.adminData.candidates,
       hospitalRankings: state.adminData.hospitalRankings,
@@ -453,8 +608,9 @@ function renderRun() {
       summaryBox("Latest run", "None yet"),
       summaryBox("Proposer side", "n/a"),
       summaryBox("Stable", "n/a"),
+      summaryBox("Ranking limit", getRankingLimit()),
     ].join("");
-    elements.matchesTable.innerHTML = `<p class="empty">Run the algorithm to see assignments.</p>`;
+    elements.matchesTable.innerHTML = `<p class="empty">Lock the market and run the algorithm to see assignments.</p>`;
     elements.blockingPairs.innerHTML = `<p class="empty">No run yet.</p>`;
     elements.traceTable.innerHTML = `<p class="empty">No trace yet.</p>`;
     elements.stabilityBadge.textContent = "No run yet";
@@ -463,13 +619,28 @@ function renderRun() {
   }
 
   const stats = run.stats;
-  const hospitals = state.adminData.hospitals;
+  const hospitalsById = Object.fromEntries(state.adminData.hospitals.map((hospital) => [hospital.id, hospital]));
   const candidatesById = Object.fromEntries(state.adminData.candidates.map((candidate) => [candidate.id, candidate]));
+  const unfilteredMatchRows = Object.entries(run.hospitalMatches).map(([hospitalId, matchedIds]) => ({
+    hospitalId,
+    hospital: hospitalsById[hospitalId]?.name || hospitalId,
+    capacity: hospitalsById[hospitalId]?.capacity ?? 0,
+    matches: matchedIds.map((candidateId) => candidatesById[candidateId]?.name || candidateId).join(", ") || "Unfilled",
+  }));
+  const matchRows = filterRows(
+    unfilteredMatchRows,
+    elements.matchesFilter.value,
+    [
+      (row) => row.hospital,
+      (row) => row.hospitalId,
+      (row) => row.matches,
+    ],
+  );
 
   elements.runSummary.innerHTML = [
-    summaryBox("Proposer side", run.proposerSide),
+    summaryBox("Proposer side", roleLabel(run.proposerSide)),
     summaryBox("Matched pairs", `${stats.matchedCount}/${Math.min(stats.candidateCount, stats.totalSlots)}`),
-    summaryBox("Candidate avg. rank", stats.averageCandidateRank ?? "n/a"),
+    summaryBox("Student avg. rank", stats.averageCandidateRank ?? "n/a"),
     summaryBox("Hospital avg. rank", stats.averageHospitalRank ?? "n/a"),
     summaryBox("Blocking pairs", stats.blockingPairs.length),
     summaryBox("Created at", new Date(run.createdAt).toLocaleString()),
@@ -478,13 +649,6 @@ function renderRun() {
   elements.stabilityBadge.textContent = stats.isStable ? "Stable" : "Blocking pairs found";
   elements.stabilityBadge.className = `badge ${stats.isStable ? "ok" : "warn"}`;
 
-  const matchRows = hospitals.map((hospital) => ({
-    hospital: hospital.name,
-    capacity: hospital.capacity,
-    matches: (run.hospitalMatches[hospital.id] || [])
-      .map((candidateId) => candidatesById[candidateId]?.name || candidateId)
-      .join(", ") || "Unfilled",
-  }));
   elements.matchesTable.innerHTML = renderTable(
     [
       { label: "Hospital", key: "hospital" },
@@ -500,7 +664,7 @@ function renderRun() {
     elements.blockingPairs.innerHTML = renderTable(
       [
         { label: "Hospital", key: "hospitalName" },
-        { label: "Candidate", key: "candidateName" },
+        { label: "Student", key: "candidateName" },
       ],
       stats.blockingPairs,
     );
@@ -512,10 +676,7 @@ function renderRun() {
       { label: "Proposer", key: "proposerName" },
       { label: "Receiver", key: "receiverName" },
       { label: "Outcome", key: "outcomeLabel" },
-      {
-        label: "Displaced",
-        render: (row) => row.displacedProposerName || "—",
-      },
+      { label: "Displaced", render: (row) => row.displacedProposerName || "—" },
     ],
     run.trace,
   );
@@ -554,12 +715,34 @@ async function refreshAdminState({ quiet = false } = {}) {
   }
 }
 
+async function refreshParticipantRole({ quiet = false } = {}) {
+  if (!state.participantRole) {
+    return;
+  }
+  try {
+    const payload = await publicApi(
+      `/api/public/role?roleType=${encodeURIComponent(state.participantRole.roleType)}&roleId=${encodeURIComponent(state.participantRole.role.id)}`,
+      { method: "GET" },
+    );
+    state.participantRole = payload;
+    state.participantRankingOrder = normalizeParticipantRanking(payload);
+  } catch (error) {
+    state.participantRole = null;
+    state.participantRankingOrder = [];
+    state.participantChoiceQuery = "";
+    if (!quiet) {
+      log(error.message);
+    }
+  }
+}
+
 async function registerParticipant({ quiet = false } = {}) {
   const roleType = elements.participantRoleType.value;
   const name = elements.participantName.value.trim();
   if (!name) {
     state.participantRole = null;
     state.participantRankingOrder = [];
+    state.participantChoiceQuery = "";
     if (!quiet) {
       throw new Error("Enter your name before starting your entry.");
     }
@@ -572,9 +755,9 @@ async function registerParticipant({ quiet = false } = {}) {
       name,
     }),
   });
-  state.participantRankingOrder = normalizeParticipantOrder(state.participantRole);
+  state.participantRankingOrder = normalizeParticipantRanking(state.participantRole);
+  state.participantChoiceQuery = "";
   elements.participantName.value = state.participantRole.role.name;
-  saveSettings();
   if (!quiet) {
     log(
       `${state.participantRole.created ? "Created" : "Loaded"} ${roleLabel(roleType).toLowerCase()} entry '${state.participantRole.role.name}'.`,
@@ -585,24 +768,27 @@ async function registerParticipant({ quiet = false } = {}) {
 async function refreshAll({ quiet = false } = {}) {
   await refreshPublicMarket({ quiet: true });
   await refreshAdminState({ quiet: true });
-  if (elements.participantName.value.trim()) {
-    try {
-      await registerParticipant({ quiet: true });
-    } catch (error) {
-      state.participantRole = null;
-      state.participantRankingOrder = [];
-      if (!quiet) {
-        log(error.message);
-      }
-    }
-  } else {
-    state.participantRole = null;
-    state.participantRankingOrder = [];
-  }
+  await refreshParticipantRole({ quiet: true });
   renderAll();
   if (!quiet) {
     log("Refreshed public and admin data.");
   }
+}
+
+function addParticipantChoice(choiceId) {
+  if (!state.participantRole || state.participantRankingOrder.includes(choiceId)) {
+    return;
+  }
+  if (state.participantRankingOrder.length >= getRankingLimit()) {
+    return;
+  }
+  state.participantRankingOrder = [...state.participantRankingOrder, choiceId];
+  renderParticipantPanel();
+}
+
+function removeParticipantChoice(choiceId) {
+  state.participantRankingOrder = state.participantRankingOrder.filter((item) => item !== choiceId);
+  renderParticipantPanel();
 }
 
 function moveParticipantChoice(index, direction) {
@@ -618,7 +804,7 @@ function moveParticipantChoice(index, direction) {
 
 async function submitParticipantRanking() {
   if (!state.participantRole) {
-    log("Choose your side, enter your name, and start your entry before submitting preferences.");
+    log("Load your entry before submitting preferences.");
     return;
   }
   const payload = await publicApi("/api/public/submit", {
@@ -630,7 +816,7 @@ async function submitParticipantRanking() {
     }),
   });
   state.participantRole = payload;
-  state.participantRankingOrder = normalizeParticipantOrder(payload);
+  state.participantRankingOrder = normalizeParticipantRanking(payload);
   await refreshPublicMarket({ quiet: true });
   await refreshAdminState({ quiet: true });
   renderAll();
@@ -673,7 +859,6 @@ function attachHandlers() {
 
   elements.unlockAdmin.addEventListener("click", async () => {
     try {
-      saveSettings();
       await refreshAdminState();
       renderAll();
     } catch (error) {
@@ -685,7 +870,6 @@ function attachHandlers() {
   elements.lockAdmin.addEventListener("click", () => {
     elements.adminKey.value = "";
     state.adminData = null;
-    saveSettings();
     renderAll();
     log("Admin session cleared from this browser.");
   });
@@ -693,15 +877,20 @@ function attachHandlers() {
   elements.participantRoleType.addEventListener("change", () => {
     state.participantRole = null;
     state.participantRankingOrder = [];
-    saveSettings();
+    state.participantChoiceQuery = "";
     renderAll();
   });
 
   elements.participantName.addEventListener("input", () => {
     state.participantRole = null;
     state.participantRankingOrder = [];
-    saveSettings();
+    state.participantChoiceQuery = "";
     renderAll();
+  });
+
+  elements.participantChoiceSearch.addEventListener("input", (event) => {
+    state.participantChoiceQuery = event.target.value;
+    renderParticipantPanel();
   });
 
   elements.participantLoad.addEventListener("click", async () => {
@@ -713,6 +902,7 @@ function attachHandlers() {
     } catch (error) {
       state.participantRole = null;
       state.participantRankingOrder = [];
+      state.participantChoiceQuery = "";
       renderAll();
       log(error.message);
     }
@@ -727,7 +917,31 @@ function attachHandlers() {
     }
   });
 
-  document.getElementById("load-demo").addEventListener("click", async () => {
+  elements.openRegistration.addEventListener("click", async () => {
+    try {
+      await adminMutate("/api/admin/market-phase", { phase: "registration_open" }, "Opened registration.");
+    } catch (error) {
+      log(error.message);
+    }
+  });
+
+  elements.openRanking.addEventListener("click", async () => {
+    try {
+      await adminMutate("/api/admin/market-phase", { phase: "ranking_open" }, "Opened ranking.");
+    } catch (error) {
+      log(error.message);
+    }
+  });
+
+  elements.lockMarket.addEventListener("click", async () => {
+    try {
+      await adminMutate("/api/admin/market-phase", { phase: "locked" }, "Locked the market.");
+    } catch (error) {
+      log(error.message);
+    }
+  });
+
+  elements.loadDemo.addEventListener("click", async () => {
     try {
       await adminMutate("/api/admin/load-demo", {}, "Loaded textbook demo market.");
     } catch (error) {
@@ -735,7 +949,7 @@ function attachHandlers() {
     }
   });
 
-  document.getElementById("run-hospital").addEventListener("click", async () => {
+  elements.runHospital.addEventListener("click", async () => {
     try {
       await adminMutate("/api/run", { proposerSide: "hospital" }, "Ran hospital-proposing deferred acceptance.");
     } catch (error) {
@@ -743,16 +957,16 @@ function attachHandlers() {
     }
   });
 
-  document.getElementById("run-candidate").addEventListener("click", async () => {
+  elements.runCandidate.addEventListener("click", async () => {
     try {
-      await adminMutate("/api/run", { proposerSide: "candidate" }, "Ran candidate-proposing deferred acceptance.");
+      await adminMutate("/api/run", { proposerSide: "candidate" }, "Ran student-proposing deferred acceptance.");
     } catch (error) {
       log(error.message);
     }
   });
 
-  document.getElementById("reset-market").addEventListener("click", async () => {
-    if (!window.confirm("Reset the entire market and clear all saved rankings?")) {
+  elements.resetMarket.addEventListener("click", async () => {
+    if (!window.confirm("Reset the entire market and clear all saved registrations, rankings, and runs?")) {
       return;
     }
     try {
@@ -802,7 +1016,7 @@ function attachHandlers() {
           id: elements.candidateId.value.trim(),
           name: elements.candidateName.value.trim(),
         },
-        `Saved candidate '${elements.candidateName.value.trim()}'.`,
+        `Saved student '${elements.candidateName.value.trim()}'.`,
       );
       elements.candidateForm.reset();
     } catch (error) {
@@ -824,13 +1038,49 @@ function attachHandlers() {
     }
   });
 
+  elements.hospitalSubmissionFilter.addEventListener("input", () => renderSubmissionStatus());
+  elements.candidateSubmissionFilter.addEventListener("input", () => renderSubmissionStatus());
+  elements.matchesFilter.addEventListener("input", () => renderRun());
+
   document.body.addEventListener("click", async (event) => {
+    const addButton = event.target.closest("[data-add-choice]");
+    if (addButton) {
+      addParticipantChoice(addButton.getAttribute("data-add-choice"));
+      return;
+    }
+
+    const removeChoiceButton = event.target.closest("[data-remove-choice]");
+    if (removeChoiceButton) {
+      removeParticipantChoice(removeChoiceButton.getAttribute("data-remove-choice"));
+      return;
+    }
+
     const moveButton = event.target.closest("[data-move-choice]");
     if (moveButton) {
       moveParticipantChoice(
         Number(moveButton.getAttribute("data-move-choice")),
         Number(moveButton.getAttribute("data-direction")),
       );
+      return;
+    }
+
+    const removeRoleButton = event.target.closest("[data-remove-role]");
+    if (removeRoleButton) {
+      const roleType = removeRoleButton.getAttribute("data-remove-role");
+      const roleId = removeRoleButton.getAttribute("data-role-id");
+      const roleLabelText = removeRoleButton.getAttribute("data-role-label");
+      if (!window.confirm(`Remove ${roleLabel(roleType)} '${roleLabelText}' from the market?`)) {
+        return;
+      }
+      try {
+        await adminMutate(
+          "/api/admin/remove-role",
+          { roleType, roleId },
+          `Removed ${roleLabel(roleType).toLowerCase()} '${roleLabelText}'.`,
+        );
+      } catch (error) {
+        log(error.message);
+      }
       return;
     }
 
@@ -863,7 +1113,7 @@ function attachHandlers() {
             candidateId: entityId,
             orderedHospitalIds: orderedIds,
           },
-          `Saved ranking for candidate '${entityId}'.`,
+          `Saved ranking for student '${entityId}'.`,
         );
       }
     } catch (error) {

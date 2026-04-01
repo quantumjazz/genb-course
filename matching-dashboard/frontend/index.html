@@ -3,17 +3,18 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Matching Dashboard</title>
+    <title>Classroom Matching Dashboard</title>
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
     <main class="shell">
       <section class="hero">
-        <p class="eyebrow">Central Office MVP</p>
-        <h1>Hospital Matching Dashboard</h1>
+        <p class="eyebrow">Classroom Market</p>
+        <h1>Classroom Matching Dashboard</h1>
+        <p class="hero-subtitle">GENB 070 Society, economy, business</p>
         <p class="lede">
-          Students submit preferences for their pre-assigned role, then the admin reviews
-          completion and runs the deferred-acceptance allocation from one place.
+          Participants register as hospitals or students, the market moves through fixed
+          phases, and the admin runs deferred acceptance once submissions are locked.
         </p>
       </section>
 
@@ -50,7 +51,7 @@
           </div>
         </details>
         <p class="hint">
-          Public routes are for student submissions. Full rankings, submission status, and the run controls sit behind the admin key.
+          Only the API base URL is saved in this browser. Participant names and the admin key are not persisted.
         </p>
       </section>
 
@@ -63,7 +64,7 @@
           <label>
             <span>Role side</span>
             <select id="participant-role-type">
-              <option value="candidate">Candidate / student</option>
+              <option value="candidate">Student</option>
               <option value="hospital">Hospital</option>
             </select>
           </label>
@@ -77,15 +78,35 @@
             <div>
               <h3 id="participant-role-title">Choose your role and enter your name</h3>
               <p id="participant-role-meta" class="ranking-meta">
-                Your opposite-side options will appear here once you start or resume your entry.
+                Register first, then wait for the admin to open the ranking phase.
               </p>
             </div>
-            <span id="participant-role-badge" class="badge muted">No submission</span>
+            <span id="participant-role-badge" class="badge muted">No entry</span>
           </div>
           <p class="hint">
-            Pick a side, enter your name, then rank every opposite-side option from most preferred to least preferred.
+            The first registration for a normalized name locks that participant to one side of the market.
           </p>
-          <div id="participant-ranking-list" class="choice-list"></div>
+          <div id="participant-ranking-note" class="hint ranking-note"></div>
+          <div id="participant-picker-grid" class="picker-grid" hidden>
+            <div class="card picker-panel">
+              <div class="panel-header compact-header">
+                <h3>Available options</h3>
+                <span id="participant-limit-badge" class="badge muted">Top 10</span>
+              </div>
+              <label>
+                <span>Search</span>
+                <input id="participant-choice-search" type="search" placeholder="Search by name or ID">
+              </label>
+              <div id="participant-available-list" class="choice-list"></div>
+            </div>
+            <div class="card picker-panel">
+              <div class="panel-header compact-header">
+                <h3>Selected choices</h3>
+                <span id="participant-selected-count" class="badge muted">0 / 10</span>
+              </div>
+              <div id="participant-selected-list" class="choice-list"></div>
+            </div>
+          </div>
           <div class="actions">
             <button id="participant-load" class="button">Start or continue</button>
             <button id="participant-submit" class="button primary">Submit preferences</button>
@@ -98,15 +119,17 @@
           <h2>Admin Panel</h2>
           <span id="market-summary" class="badge muted">Admin state unavailable</span>
         </div>
-        <div id="admin-summary" class="grid three summary-grid"></div>
+        <div id="admin-summary" class="grid four summary-grid"></div>
         <div class="actions wrap">
-          <button id="load-demo" class="button primary">Load textbook demo</button>
+          <button id="open-registration" class="button">Open registration</button>
+          <button id="open-ranking" class="button">Open ranking</button>
+          <button id="lock-market" class="button primary">Lock market</button>
           <button id="run-hospital" class="button">Run hospital-proposing DA</button>
-          <button id="run-candidate" class="button">Run candidate-proposing DA</button>
+          <button id="run-candidate" class="button">Run student-proposing DA</button>
           <button id="reset-market" class="button danger">Reset market</button>
         </div>
         <p class="hint">
-          The admin panel shows which roles have submitted and runs the centralized algorithm once the market is ready.
+          Close registration before opening ranking so everyone ranks against a fixed market.
         </p>
       </section>
 
@@ -116,91 +139,97 @@
         </div>
         <div class="grid two">
           <div class="card">
-            <h3>Hospitals</h3>
+            <label>
+              <span>Filter hospitals</span>
+              <input id="hospital-submission-filter" type="search" placeholder="Search hospitals">
+            </label>
             <div id="hospital-submission-table"></div>
           </div>
           <div class="card">
-            <h3>Candidates</h3>
+            <label>
+              <span>Filter students</span>
+              <input id="candidate-submission-filter" type="search" placeholder="Search students">
+            </label>
             <div id="candidate-submission-table"></div>
           </div>
         </div>
       </section>
 
       <section class="panel admin-only" hidden>
-        <div class="panel-header">
-          <h2>Entities</h2>
-        </div>
-        <div class="grid two">
-          <form id="hospital-form" class="card form-card">
-            <h3>Add or update hospital</h3>
-            <label>
-              <span>ID</span>
-              <input id="hospital-id" type="text" placeholder="hopkins">
-            </label>
-            <label>
-              <span>Name</span>
-              <input id="hospital-name" type="text" placeholder="Hopkins">
-            </label>
-            <label>
-              <span>Capacity</span>
-              <input id="hospital-capacity" type="number" min="0" value="1">
-            </label>
-            <button type="submit" class="button primary">Save hospital</button>
-          </form>
+        <details class="advanced-tools">
+          <summary>Advanced tools</summary>
+          <div class="advanced-body">
+            <div class="actions wrap">
+              <button id="load-demo" class="button">Load textbook demo</button>
+            </div>
 
-          <form id="candidate-form" class="card form-card">
-            <h3>Add or update candidate</h3>
-            <label>
-              <span>ID</span>
-              <input id="candidate-id" type="text" placeholder="alice">
-            </label>
-            <label>
-              <span>Name</span>
-              <input id="candidate-name" type="text" placeholder="Alice">
-            </label>
-            <button type="submit" class="button primary">Save candidate</button>
-          </form>
-        </div>
-        <div class="grid two">
-          <div class="card">
-            <h3>Hospitals</h3>
-            <div id="hospital-table"></div>
-          </div>
-          <div class="card">
-            <h3>Candidates</h3>
-            <div id="candidate-table"></div>
-          </div>
-        </div>
-      </section>
+            <div class="grid two advanced-section">
+              <form id="hospital-form" class="card form-card">
+                <h3>Add or update hospital</h3>
+                <label>
+                  <span>ID</span>
+                  <input id="hospital-id" type="text" placeholder="hospital-a">
+                </label>
+                <label>
+                  <span>Name</span>
+                  <input id="hospital-name" type="text" placeholder="Hospital name">
+                </label>
+                <label>
+                  <span>Capacity</span>
+                  <input id="hospital-capacity" type="number" min="0" value="1">
+                </label>
+                <button type="submit" class="button primary">Save hospital</button>
+              </form>
 
-      <section class="panel admin-only" hidden>
-        <div class="panel-header">
-          <h2>Admin Ranking Overrides</h2>
-        </div>
-        <div class="grid two">
-          <div class="card">
-            <h3>Hospital rankings</h3>
-            <div id="hospital-rankings"></div>
-          </div>
-          <div class="card">
-            <h3>Candidate rankings</h3>
-            <div id="candidate-rankings"></div>
-          </div>
-        </div>
-      </section>
+              <form id="candidate-form" class="card form-card">
+                <h3>Add or update student</h3>
+                <label>
+                  <span>ID</span>
+                  <input id="candidate-id" type="text" placeholder="student-a">
+                </label>
+                <label>
+                  <span>Name</span>
+                  <input id="candidate-name" type="text" placeholder="Student name">
+                </label>
+                <button type="submit" class="button primary">Save student</button>
+              </form>
+            </div>
 
-      <section class="panel admin-only" hidden>
-        <div class="panel-header">
-          <h2>Market Snapshot</h2>
-        </div>
-        <p class="hint">
-          Use this only for admin setup, bulk edits, or importing a prepared classroom market.
-        </p>
-        <textarea id="snapshot" class="snapshot" spellcheck="false"></textarea>
-        <div class="actions">
-          <button id="export-snapshot" class="button">Export current state</button>
-          <button id="import-snapshot" class="button primary">Replace state from snapshot</button>
-        </div>
+            <div class="grid two advanced-section">
+              <div class="card">
+                <h3>Hospitals</h3>
+                <div id="hospital-table"></div>
+              </div>
+              <div class="card">
+                <h3>Students</h3>
+                <div id="candidate-table"></div>
+              </div>
+            </div>
+
+            <div class="grid two advanced-section">
+              <div class="card">
+                <h3>Hospital rankings</h3>
+                <div id="hospital-rankings"></div>
+              </div>
+              <div class="card">
+                <h3>Student rankings</h3>
+                <div id="candidate-rankings"></div>
+              </div>
+            </div>
+
+            <div class="advanced-section">
+              <h3>Market snapshot</h3>
+              <p class="hint">
+                Use this only for bulk edits or importing a prepared market state.
+              </p>
+              <textarea id="snapshot" class="snapshot" spellcheck="false"></textarea>
+              <div class="actions">
+                <button id="export-snapshot" class="button">Export current state</button>
+                <button id="import-snapshot" class="button primary">Replace state from snapshot</button>
+              </div>
+            </div>
+          </div>
+        </details>
       </section>
 
       <section class="panel admin-only" hidden>
@@ -208,10 +237,13 @@
           <h2>Latest Run</h2>
           <span id="stability-badge" class="badge muted">No run yet</span>
         </div>
-        <div id="run-summary" class="grid three summary-grid"></div>
+        <div id="run-summary" class="grid four summary-grid"></div>
         <div class="grid two">
           <div class="card">
-            <h3>Hospital matches</h3>
+            <label>
+              <span>Filter matches</span>
+              <input id="matches-filter" type="search" placeholder="Search hospitals or students">
+            </label>
             <div id="matches-table"></div>
           </div>
           <div class="card">
@@ -219,10 +251,10 @@
             <div id="blocking-pairs"></div>
           </div>
         </div>
-        <div class="card">
-          <h3>Trace</h3>
+        <details id="trace-details" class="card trace-details">
+          <summary>Proposal trace</summary>
           <div id="trace-table"></div>
-        </div>
+        </details>
       </section>
 
       <section class="panel status-panel">

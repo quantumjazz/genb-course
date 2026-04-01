@@ -12,6 +12,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 
+MARKET_PHASES = {"registration_open", "ranking_open", "locked"}
+RANKING_LIMIT = 10
+
+
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -51,6 +55,10 @@ def normalize_name(value):
     if not cleaned:
         raise ValueError("Name cannot be empty.")
     return cleaned
+
+
+def normalize_name_key(value):
+    return normalize_name(value).lower()
 
 
 def slugify(value):
@@ -394,11 +402,129 @@ class MatchingStore:
                     source TEXT NOT NULL,
                     PRIMARY KEY (role_type, role_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS market_state (
+                    singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+                    phase TEXT NOT NULL CHECK (phase IN ('registration_open', 'ranking_open', 'locked'))
+                );
+
+                CREATE TABLE IF NOT EXISTS participant_registry (
+                    name_key TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    role_type TEXT NOT NULL CHECK (role_type IN ('hospital', 'candidate')),
+                    role_id TEXT NOT NULL,
+                    UNIQUE (role_type, role_id)
+                );
                 """
             )
+            connection.execute(
+                """
+                INSERT INTO market_state (singleton_id, phase)
+                VALUES (1, 'registration_open')
+                ON CONFLICT(singleton_id) DO NOTHING
+                """
+            )
+            self._ensure_registry(connection)
 
     def _invalidate_runs(self, connection):
         connection.execute("DELETE FROM runs")
+
+    def _get_phase(self, connection):
+        row = connection.execute(
+            "SELECT phase FROM market_state WHERE singleton_id = 1"
+        ).fetchone()
+        return row["phase"] if row else "registration_open"
+
+    def _set_phase(self, connection, phase):
+        if phase not in MARKET_PHASES:
+            raise ValueError("phase must be 'registration_open', 'ranking_open', or 'locked'.")
+        connection.execute(
+            """
+            INSERT INTO market_state (singleton_id, phase)
+            VALUES (1, ?)
+            ON CONFLICT(singleton_id) DO UPDATE SET phase = excluded.phase
+            """,
+            (phase,),
+        )
+
+    def _rebuild_registry(self, connection):
+        entries = []
+        for role_type, table_name in (("hospital", "hospitals"), ("candidate", "candidates")):
+            for row in connection.execute(
+                f"SELECT id, name FROM {table_name} ORDER BY id"
+            ).fetchall():
+                display_name = normalize_name(row["name"])
+                entries.append((normalize_name_key(display_name), display_name, role_type, row["id"]))
+
+        seen = {}
+        for name_key, display_name, role_type, role_id in entries:
+            if name_key in seen:
+                other_role = "hospital" if seen[name_key][0] == "hospital" else "student"
+                raise ValueError(
+                    f"Duplicate normalized participant name '{display_name}' found while building the registry. "
+                    f"Resolve the clash with the existing {other_role} entry first."
+                )
+            seen[name_key] = (role_type, role_id)
+
+        connection.execute("DELETE FROM participant_registry")
+        connection.executemany(
+            """
+            INSERT INTO participant_registry (name_key, display_name, role_type, role_id)
+            VALUES (?, ?, ?, ?)
+            """,
+            entries,
+        )
+
+    def _ensure_registry(self, connection):
+        role_count = (
+            connection.execute("SELECT COUNT(*) AS count FROM hospitals").fetchone()["count"]
+            + connection.execute("SELECT COUNT(*) AS count FROM candidates").fetchone()["count"]
+        )
+        registry_count = connection.execute(
+            "SELECT COUNT(*) AS count FROM participant_registry"
+        ).fetchone()["count"]
+        if registry_count != role_count:
+            self._rebuild_registry(connection)
+
+    def _find_registry_entry(self, connection, name_key):
+        self._ensure_registry(connection)
+        return connection.execute(
+            """
+            SELECT name_key, display_name, role_type, role_id
+            FROM participant_registry
+            WHERE name_key = ?
+            """,
+            (name_key,),
+        ).fetchone()
+
+    def _sync_registry_entry(self, connection, role_type, role_id, display_name):
+        cleaned_name = normalize_name(display_name)
+        name_key = normalize_name_key(cleaned_name)
+        existing = self._find_registry_entry(connection, name_key)
+        if existing and (existing["role_type"] != role_type or existing["role_id"] != role_id):
+            other_role = "hospital" if existing["role_type"] == "hospital" else "student"
+            raise ValueError(
+                f"'{cleaned_name}' is already registered as a {other_role}. "
+                "Use a different normalized name or keep the original role."
+            )
+
+        connection.execute(
+            "DELETE FROM participant_registry WHERE role_type = ? AND role_id = ?",
+            (role_type, role_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO participant_registry (name_key, display_name, role_type, role_id)
+            VALUES (?, ?, ?, ?)
+            """,
+            (name_key, cleaned_name, role_type, role_id),
+        )
+
+    def _remove_registry_entry(self, connection, role_type, role_id):
+        connection.execute(
+            "DELETE FROM participant_registry WHERE role_type = ? AND role_id = ?",
+            (role_type, role_id),
+        )
 
     def _set_submission(self, connection, role_type, role_id, source):
         connection.execute(
@@ -463,31 +589,6 @@ class MatchingStore:
         ).fetchone()
         return json.loads(latest_row["payload_json"]) if latest_row else None
 
-    def _find_role_by_name(self, connection, role_type, name):
-        if role_type == "hospital":
-            return connection.execute(
-                """
-                SELECT id, name, capacity
-                FROM hospitals
-                WHERE lower(name) = lower(?)
-                ORDER BY id
-                LIMIT 1
-                """,
-                (name,),
-            ).fetchone()
-        if role_type == "candidate":
-            return connection.execute(
-                """
-                SELECT id, name
-                FROM candidates
-                WHERE lower(name) = lower(?)
-                ORDER BY id
-                LIMIT 1
-                """,
-                (name,),
-            ).fetchone()
-        raise ValueError("roleType must be 'hospital' or 'candidate'.")
-
     def _next_available_id(self, connection, table_name, base_id):
         candidate_id = base_id
         suffix = 2
@@ -548,6 +649,8 @@ class MatchingStore:
 
     def export_state(self):
         with self._connect() as connection:
+            self._ensure_registry(connection)
+            phase = self._get_phase(connection)
             hospitals = self._load_hospitals(connection)
             candidates = self._load_candidates(connection)
             hospital_rankings = self._load_rankings(
@@ -573,6 +676,8 @@ class MatchingStore:
             )
 
         return {
+            "phase": phase,
+            "rankingLimit": RANKING_LIMIT,
             "hospitals": hospitals,
             "candidates": candidates,
             "hospitalRankings": hospital_rankings,
@@ -583,6 +688,8 @@ class MatchingStore:
 
     def export_public_market(self):
         with self._connect() as connection:
+            self._ensure_registry(connection)
+            phase = self._get_phase(connection)
             hospitals = self._load_hospitals(connection)
             candidates = self._load_candidates(connection)
             hospital_rankings = self._load_rankings(
@@ -608,6 +715,8 @@ class MatchingStore:
             latest_run = self._latest_run(connection)
 
         return {
+            "phase": phase,
+            "rankingLimit": RANKING_LIMIT,
             "hospitals": hospitals,
             "candidates": candidates,
             "submissionCounts": submission_summary["counts"],
@@ -619,6 +728,8 @@ class MatchingStore:
             raise ValueError("roleType must be 'hospital' or 'candidate'.")
 
         with self._connect() as connection:
+            self._ensure_registry(connection)
+            phase = self._get_phase(connection)
             submissions = self._load_submissions(connection)
             if role_type == "hospital":
                 row = connection.execute(
@@ -656,35 +767,43 @@ class MatchingStore:
             "role": dict(row),
             "choices": choices,
             "currentRanking": ranking,
+            "phase": phase,
+            "rankingLimit": RANKING_LIMIT,
             "submittedAt": metadata["submittedAt"] if metadata else None,
             "source": metadata["source"] if metadata else ("legacy" if ranking else None),
         }
 
-    def register_public_role(self, role_type, name, capacity=1):
+    def register_public_role(self, role_type, name):
         role_type = str(role_type).strip().lower()
         name = normalize_name(name)
+        name_key = normalize_name_key(name)
 
         if role_type == "hospital":
-            try:
-                capacity = int(capacity)
-            except (TypeError, ValueError):
-                raise ValueError("Hospital capacity must be an integer.")
-            if capacity < 1:
-                raise ValueError("Hospital capacity must be at least 1.")
+            capacity = 1
         elif role_type != "candidate":
             raise ValueError("roleType must be 'hospital' or 'candidate'.")
 
         with self._connect() as connection:
-            existing = self._find_role_by_name(connection, role_type, name)
+            existing = self._find_registry_entry(connection, name_key)
+            phase = self._get_phase(connection)
             created = False
             if existing is not None:
-                role_id = existing["id"]
+                if existing["role_type"] != role_type:
+                    other_role = "hospital" if existing["role_type"] == "hospital" else "student"
+                    raise ValueError(
+                        f"'{name}' is already registered as a {other_role}. "
+                        "Reopen that entry with the original role instead."
+                    )
+                role_id = existing["role_id"]
+            elif phase != "registration_open":
+                raise ValueError("Registration is closed.")
             elif role_type == "hospital":
                 role_id = self._next_available_id(connection, "hospitals", slugify(name))
                 connection.execute(
                     "INSERT INTO hospitals (id, name, capacity) VALUES (?, ?, ?)",
                     (role_id, name, capacity),
                 )
+                self._sync_registry_entry(connection, "hospital", role_id, name)
                 self._invalidate_runs(connection)
                 created = True
             else:
@@ -693,6 +812,7 @@ class MatchingStore:
                     "INSERT INTO candidates (id, name) VALUES (?, ?)",
                     (role_id, name),
                 )
+                self._sync_registry_entry(connection, "candidate", role_id, name)
                 self._invalidate_runs(connection)
                 created = True
 
@@ -703,6 +823,10 @@ class MatchingStore:
     def upsert_hospital(self, hospital_id, name, capacity):
         if not isinstance(capacity, int) or capacity < 0:
             raise ValueError("Hospital capacity must be a non-negative integer.")
+        hospital_id = str(hospital_id).strip()
+        name = normalize_name(name)
+        if not hospital_id:
+            raise ValueError("Hospital requires a non-empty id.")
         with self._connect() as connection:
             connection.execute(
                 """
@@ -712,9 +836,14 @@ class MatchingStore:
                 """,
                 (hospital_id, name, capacity),
             )
+            self._sync_registry_entry(connection, "hospital", hospital_id, name)
             self._invalidate_runs(connection)
 
     def upsert_candidate(self, candidate_id, name):
+        candidate_id = str(candidate_id).strip()
+        name = normalize_name(name)
+        if not candidate_id:
+            raise ValueError("Candidate requires a non-empty id.")
         with self._connect() as connection:
             connection.execute(
                 """
@@ -724,6 +853,66 @@ class MatchingStore:
                 """,
                 (candidate_id, name),
             )
+            self._sync_registry_entry(connection, "candidate", candidate_id, name)
+            self._invalidate_runs(connection)
+
+    def set_market_phase(self, phase):
+        with self._connect() as connection:
+            self._set_phase(connection, phase)
+
+    def remove_role(self, role_type, role_id):
+        role_type = str(role_type).strip().lower()
+        role_id = str(role_id).strip()
+        if role_type not in {"hospital", "candidate"}:
+            raise ValueError("roleType must be 'hospital' or 'candidate'.")
+        if not role_id:
+            raise ValueError("roleId is required.")
+
+        with self._connect() as connection:
+            table_name = "hospitals" if role_type == "hospital" else "candidates"
+            if (
+                connection.execute(
+                    f"SELECT 1 FROM {table_name} WHERE id = ?",
+                    (role_id,),
+                ).fetchone()
+                is None
+            ):
+                raise ValueError(f"Unknown {role_type} '{role_id}'.")
+
+            if role_type == "hospital":
+                affected_rows = connection.execute(
+                    "SELECT DISTINCT candidate_id FROM candidate_rankings WHERE hospital_id = ?",
+                    (role_id,),
+                ).fetchall()
+                connection.execute("DELETE FROM hospital_rankings WHERE hospital_id = ?", (role_id,))
+                connection.execute("DELETE FROM candidate_rankings WHERE hospital_id = ?", (role_id,))
+                for row in affected_rows:
+                    remaining = connection.execute(
+                        "SELECT 1 FROM candidate_rankings WHERE candidate_id = ? LIMIT 1",
+                        (row["candidate_id"],),
+                    ).fetchone()
+                    if remaining is None:
+                        self._clear_submission(connection, "candidate", row["candidate_id"])
+            else:
+                affected_rows = connection.execute(
+                    "SELECT DISTINCT hospital_id FROM hospital_rankings WHERE candidate_id = ?",
+                    (role_id,),
+                ).fetchall()
+                connection.execute("DELETE FROM candidate_rankings WHERE candidate_id = ?", (role_id,))
+                connection.execute("DELETE FROM hospital_rankings WHERE candidate_id = ?", (role_id,))
+                for row in affected_rows:
+                    remaining = connection.execute(
+                        "SELECT 1 FROM hospital_rankings WHERE hospital_id = ? LIMIT 1",
+                        (row["hospital_id"],),
+                    ).fetchone()
+                    if remaining is None:
+                        self._clear_submission(connection, "hospital", row["hospital_id"])
+            connection.execute(
+                "DELETE FROM submissions WHERE role_type = ? AND role_id = ?",
+                (role_type, role_id),
+            )
+            connection.execute(f"DELETE FROM {table_name} WHERE id = ?", (role_id,))
+            self._remove_registry_entry(connection, role_type, role_id)
             self._invalidate_runs(connection)
 
     def _assert_entities_exist(self, connection, table_name, entity_ids):
@@ -782,23 +971,28 @@ class MatchingStore:
         candidates = payload.get("candidates", [])
         hospital_rankings = payload.get("hospitalRankings", {})
         candidate_rankings = payload.get("candidateRankings", {})
+        imported_phase = payload.get("phase")
 
         if not isinstance(hospitals, list) or not isinstance(candidates, list):
             raise ValueError("hospitals and candidates must be arrays.")
         if not isinstance(hospital_rankings, dict) or not isinstance(candidate_rankings, dict):
             raise ValueError("Ranking maps must be objects.")
+        if imported_phase is not None and imported_phase not in MARKET_PHASES:
+            raise ValueError("phase must be 'registration_open', 'ranking_open', or 'locked'.")
 
         with self._connect() as connection:
+            current_phase = self._get_phase(connection)
             connection.execute("DELETE FROM hospital_rankings")
             connection.execute("DELETE FROM candidate_rankings")
             connection.execute("DELETE FROM submissions")
             connection.execute("DELETE FROM hospitals")
             connection.execute("DELETE FROM candidates")
+            connection.execute("DELETE FROM participant_registry")
             self._invalidate_runs(connection)
 
             for hospital in hospitals:
                 hospital_id = str(hospital["id"]).strip()
-                name = str(hospital["name"]).strip()
+                name = normalize_name(hospital["name"])
                 capacity = int(hospital["capacity"])
                 if not hospital_id or not name:
                     raise ValueError("Hospitals require non-empty id and name.")
@@ -806,16 +1000,18 @@ class MatchingStore:
                     "INSERT INTO hospitals (id, name, capacity) VALUES (?, ?, ?)",
                     (hospital_id, name, capacity),
                 )
+                self._sync_registry_entry(connection, "hospital", hospital_id, name)
 
             for candidate in candidates:
                 candidate_id = str(candidate["id"]).strip()
-                name = str(candidate["name"]).strip()
+                name = normalize_name(candidate["name"])
                 if not candidate_id or not name:
                     raise ValueError("Candidates require non-empty id and name.")
                 connection.execute(
                     "INSERT INTO candidates (id, name) VALUES (?, ?)",
                     (candidate_id, name),
                 )
+                self._sync_registry_entry(connection, "candidate", candidate_id, name)
 
             self._assert_entities_exist(connection, "hospitals", list(hospital_rankings.keys()))
             self._assert_entities_exist(connection, "candidates", list(candidate_rankings.keys()))
@@ -845,6 +1041,7 @@ class MatchingStore:
                 )
                 if values:
                     self._set_submission(connection, "candidate", candidate_id, "import")
+            self._set_phase(connection, imported_phase or current_phase)
             self._invalidate_runs(connection)
 
     def reset(self):
@@ -854,12 +1051,15 @@ class MatchingStore:
             connection.execute("DELETE FROM submissions")
             connection.execute("DELETE FROM hospitals")
             connection.execute("DELETE FROM candidates")
+            connection.execute("DELETE FROM participant_registry")
             connection.execute("DELETE FROM runs")
+            self._set_phase(connection, "registration_open")
 
     def load_demo(self):
         self.reset()
         self.replace_state(
             {
+                "phase": "locked",
                 "hospitals": [
                     {"id": "hopkins", "name": "Hopkins", "capacity": 1},
                     {"id": "stanford", "name": "Stanford", "capacity": 1},
@@ -887,6 +1087,11 @@ class MatchingStore:
         ordered_ids = split_ids(ordered_ids)
         if not ordered_ids:
             raise ValueError("Submit at least one ranked preference.")
+        if len(ordered_ids) > RANKING_LIMIT:
+            raise ValueError(f"Submit at most {RANKING_LIMIT} ranked preferences.")
+        with self._connect() as connection:
+            if self._get_phase(connection) != "ranking_open":
+                raise ValueError("Ranking is not open right now.")
         if role_type == "hospital":
             self.set_hospital_ranking(role_id, ordered_ids, source="participant")
         elif role_type == "candidate":
@@ -896,6 +1101,9 @@ class MatchingStore:
         return self.export_public_role(role_type, role_id)
 
     def run(self, proposer_side):
+        with self._connect() as connection:
+            if self._get_phase(connection) != "locked":
+                raise ValueError("Lock the market before running the match.")
         state = self.export_state()
         result = run_matching(
             hospitals=state["hospitals"],
@@ -971,11 +1179,23 @@ class MatchingHandler(BaseHTTPRequestHandler):
                 self.app.store.load_demo()
                 self._respond_json(self.app.store.export_state())
                 return
+            if parsed.path == "/api/admin/market-phase":
+                self._require_admin()
+                phase = str(body.get("phase", "")).strip()
+                self.app.store.set_market_phase(phase)
+                self._respond_json(self.app.store.export_state())
+                return
+            if parsed.path == "/api/admin/remove-role":
+                self._require_admin()
+                role_type = str(body.get("roleType", "")).strip().lower()
+                role_id = str(body.get("roleId", "")).strip()
+                self.app.store.remove_role(role_type, role_id)
+                self._respond_json(self.app.store.export_state())
+                return
             if parsed.path == "/api/public/register":
                 role_type = str(body.get("roleType", "")).strip().lower()
                 name = body.get("name", "")
-                capacity = body.get("capacity", 1)
-                payload = self.app.store.register_public_role(role_type, name, capacity)
+                payload = self.app.store.register_public_role(role_type, name)
                 self._respond_json(payload)
                 return
             if parsed.path == "/api/public/submit":

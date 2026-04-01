@@ -1,6 +1,6 @@
 # Matching Dashboard MVP
 
-This folder contains a simple prototype of the "central office" described in the Milgrom & Roberts hospital-intern matching example and in the local lecture deck at `/Users/victor/Documents/Courses/society_economics_business/01-защо-съществуват-фирмите/matching-lecture.qmd`.
+This folder contains a classroom-oriented prototype of the "central office" described in the Milgrom & Roberts hospital-intern matching example and in the local lecture deck at `/Users/victor/Documents/Courses/society_economics_business/01-защо-съществуват-фирмите/matching-lecture.qmd`.
 
 The design follows the case closely:
 
@@ -26,9 +26,12 @@ For a classroom or pilot, this is realistic. For anything public-facing, add TLS
 
 - hospitals with capacities;
 - candidates with one seat each;
-- participant self-registration by role and name;
-- a public submission flow for students plus an admin control panel;
+- participant self-registration with only role and name;
+- a public classroom submission flow plus an admin control panel;
+- explicit market phases: registration open, ranking open, locked;
+- one normalized name per market, so the first role claim is binding;
 - incomplete rankings;
+- top-10 participant rankings for classroom-scale markets;
 - hospital-proposing deferred acceptance;
 - candidate-proposing deferred acceptance, so you can demonstrate the asymmetry highlighted in the lecture;
 - a step trace of proposals and rejections;
@@ -36,12 +39,12 @@ For a classroom or pilot, this is realistic. For anything public-facing, add TLS
 
 ## Student And Admin Workflow
 
-1. Students open the frontend, choose a side, enter their name, and start or resume their own entry.
-2. If that name has not appeared on that side yet, the backend creates the role automatically. If it already exists, the same record is reopened.
-3. Students rank the opposite side and submit their preferences.
-4. The admin unlocks the hidden admin panels with the shared admin key, reviews submission status, and runs the centralized allocation once the market is ready.
+1. Participants open the frontend, choose a side, enter their name, and start or resume their own entry.
+2. During `registration_open`, the backend creates new roles automatically. A normalized name can only appear once in the whole market.
+3. The admin closes registration and opens `ranking_open` so participants can submit up to 10 opposite-side preferences.
+4. The admin then sets the market to `locked` and runs the centralized allocation on a frozen market.
 
-The current submission flow is intentionally lightweight: it trusts students not to impersonate each other by reusing the same name on the same side. If you need stronger control, the next step is per-role access codes or authenticated logins.
+The current submission flow is intentionally lightweight: it uses only role and name, so it discourages duplicates but does not provide real authentication. If you need stronger control, the next step is per-role access codes or authenticated logins.
 
 ## What It Does Not Support Yet
 
@@ -92,7 +95,7 @@ Then open:
 
 Or publish the contents of `frontend/` to GitHub Pages.
 
-Because GitHub Pages is static, the dashboard lets you type the API base URL directly into the page. That avoids build-time configuration.
+Because GitHub Pages is static, the dashboard lets you type the API base URL directly into the page. The page stores only that API base URL locally; it does not persist participant names or the admin key.
 
 ## Recommended Deployment Shape
 

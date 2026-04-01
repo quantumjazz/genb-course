@@ -1,6 +1,6 @@
 :root {
   --bg: #f4f0e8;
-  --paper: rgba(255, 252, 247, 0.88);
+  --paper: rgba(255, 252, 247, 0.9);
   --paper-strong: #fffaf3;
   --ink: #1f2a2e;
   --muted: #687277;
@@ -49,7 +49,8 @@ body {
 
 h1,
 h2,
-h3 {
+h3,
+h4 {
   font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   margin: 0;
 }
@@ -57,7 +58,15 @@ h3 {
 h1 {
   font-size: clamp(2.2rem, 4vw, 4rem);
   line-height: 0.98;
-  max-width: 14ch;
+  max-width: 16ch;
+}
+
+.hero-subtitle {
+  margin: 0.55rem 0 0;
+  color: var(--accent);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 h2 {
@@ -66,6 +75,10 @@ h2 {
 
 h3 {
   font-size: 1.05rem;
+}
+
+h4 {
+  font-size: 0.98rem;
 }
 
 .lede {
@@ -99,18 +112,29 @@ h3 {
   margin-bottom: 1rem;
 }
 
+.compact-header {
+  margin-bottom: 0.75rem;
+}
+
 .grid {
   display: grid;
   gap: 1rem;
 }
 
-.grid.two {
+.grid.two,
+.picker-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .grid.three,
-.summary-grid {
+.summary-grid.three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.grid.four,
+.summary-grid,
+.summary-grid.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .card {
@@ -123,6 +147,12 @@ h3 {
 .form-card {
   display: grid;
   gap: 0.85rem;
+  align-content: start;
+}
+
+.picker-panel {
+  display: grid;
+  gap: 0.8rem;
   align-content: start;
 }
 
@@ -180,22 +210,34 @@ textarea {
   gap: 0.4rem;
 }
 
-.admin-access {
-  margin-top: 1rem;
+.admin-access,
+.advanced-tools,
+.trace-details {
   border: 1px dashed var(--line);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.38);
 }
 
-.admin-access summary {
+.admin-access {
+  margin-top: 1rem;
+}
+
+.admin-access summary,
+.advanced-tools summary,
+.trace-details summary {
   cursor: pointer;
   padding: 0.95rem 1rem;
   color: var(--muted);
   font-weight: 700;
 }
 
-.admin-access-body {
+.admin-access-body,
+.advanced-body {
   padding: 0 1rem 1rem;
+}
+
+.advanced-section + .advanced-section {
+  margin-top: 1rem;
 }
 
 .button {
@@ -229,6 +271,11 @@ textarea {
 }
 
 .button.danger {
+  background: rgba(139, 46, 37, 0.13);
+  color: var(--danger);
+}
+
+.button.danger-inline {
   background: rgba(139, 46, 37, 0.13);
   color: var(--danger);
 }
@@ -269,7 +316,8 @@ textarea {
 
 .hint,
 .empty,
-.muted-text {
+.muted-text,
+.ranking-note {
   color: var(--muted);
   line-height: 1.45;
 }
@@ -379,10 +427,12 @@ textarea {
   font-size: 0.9rem;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 980px) {
   .grid.two,
   .grid.three,
-  .summary-grid {
+  .grid.four,
+  .summary-grid,
+  .picker-grid {
     grid-template-columns: 1fr;
   }
 
