@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Console</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand-link" href="./index.html">Matching Dashboard</a>
+        <nav class="page-links">
+          <a class="page-link" href="./index.html">Home</a>
+          <a class="page-link" href="./participant.html">Participant submission</a>
+          <a class="page-link current" href="./admin.html">Admin console</a>
+        </nav>
+      </header>
+
+      <section class="hero">
+        <p class="eyebrow">Central Office</p>
+        <h1>Admin Console</h1>
+        <p class="hero-subtitle">Instructor-facing control surface</p>
+        <p class="lede">
+          Manage phases, inspect submissions, edit the market, run deferred acceptance,
+          and explicitly publish the official result that participants may see.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Connection</h2>
+          <div class="badge-row">
+            <span id="connection-badge" class="badge muted">Public API not checked</span>
+            <span id="admin-badge" class="badge muted">Admin locked</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="check-connection" class="button">Check connection</button>
+          <button id="refresh-state" class="button">Refresh everything</button>
+        </div>
+        <details class="admin-access" open>
+          <summary>Admin access</summary>
+          <div class="admin-access-body">
+            <label>
+              <span>Admin key</span>
+              <input id="admin-key" type="password" placeholder="Needed only when the backend requires it">
+            </label>
+            <div class="actions">
+              <button id="unlock-admin" class="button primary">Unlock admin</button>
+              <button id="lock-admin" class="button">Lock admin</button>
+            </div>
+          </div>
+        </details>
+        <p class="hint">
+          Participants should use the public submission page. This console is the central office only.
+        </p>
+      </section>
+
+      <section class="panel admin-only" hidden>
+        <div class="panel-header">
+          <h2>Market Control</h2>
+          <span id="market-summary" class="badge muted">Admin state unavailable</span>
+        </div>
+        <div id="admin-summary" class="grid four summary-grid"></div>
+        <div class="actions wrap">
+          <button id="open-registration" class="button">Open registration</button>
+          <button id="open-ranking" class="button">Open ranking</button>
+          <button id="lock-market" class="button primary">Lock market</button>
+          <button id="run-hospital" class="button">Run hospital-proposing DA</button>
+          <button id="run-candidate" class="button">Run student-proposing DA</button>
+          <button id="reset-market" class="button danger">Reset market</button>
+        </div>
+        <p class="hint">
+          Participants submit to the office first. Once the market is fixed, lock it, run the algorithm, and publish only the chosen run.
+        </p>
+      </section>
+
+      <section class="panel admin-only" hidden>
+        <div class="panel-header">
+          <h2>Submission Status</h2>
+        </div>
+        <div class="grid two">
+          <div class="card">
+            <label>
+              <span>Filter hospitals</span>
+              <input id="hospital-submission-filter" type="search" placeholder="Search hospitals">
+            </label>
+            <div id="hospital-submission-table"></div>
+          </div>
+          <div class="card">
+            <label>
+              <span>Filter students</span>
+              <input id="candidate-submission-filter" type="search" placeholder="Search students">
+            </label>
+            <div id="candidate-submission-table"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel admin-only" hidden>
+        <details class="advanced-tools">
+          <summary>Advanced tools</summary>
+          <div class="advanced-body">
+            <div class="actions wrap">
+              <button id="load-demo" class="button">Load textbook demo</button>
+            </div>
+
+            <div class="grid two advanced-section">
+              <form id="hospital-form" class="card form-card">
+                <h3>Add or update hospital</h3>
+                <label>
+                  <span>ID</span>
+                  <input id="hospital-id" type="text" placeholder="hospital-a">
+                </label>
+                <label>
+                  <span>Name</span>
+                  <input id="hospital-name" type="text" placeholder="Hospital name">
+                </label>
+                <label>
+                  <span>Capacity</span>
+                  <input id="hospital-capacity" type="number" min="0" value="1">
+                </label>
+                <button type="submit" class="button primary">Save hospital</button>
+              </form>
+
+              <form id="candidate-form" class="card form-card">
+                <h3>Add or update student</h3>
+                <label>
+                  <span>ID</span>
+                  <input id="candidate-id" type="text" placeholder="student-a">
+                </label>
+                <label>
+                  <span>Name</span>
+                  <input id="candidate-name" type="text" placeholder="Student name">
+                </label>
+                <button type="submit" class="button primary">Save student</button>
+              </form>
+            </div>
+
+            <div class="grid two advanced-section">
+              <div class="card">
+                <h3>Hospitals</h3>
+                <div id="hospital-table"></div>
+              </div>
+              <div class="card">
+                <h3>Students</h3>
+                <div id="candidate-table"></div>
+              </div>
+            </div>
+
+            <div class="grid two advanced-section">
+              <div class="card">
+                <h3>Hospital rankings</h3>
+                <div id="hospital-rankings"></div>
+              </div>
+              <div class="card">
+                <h3>Student rankings</h3>
+                <div id="candidate-rankings"></div>
+              </div>
+            </div>
+
+            <div class="advanced-section">
+              <h3>Market snapshot</h3>
+              <p class="hint">
+                Use this only for bulk edits or importing a prepared market state.
+              </p>
+              <textarea id="snapshot" class="snapshot" spellcheck="false"></textarea>
+              <div class="actions">
+                <button id="export-snapshot" class="button">Export current state</button>
+                <button id="import-snapshot" class="button primary">Replace state from snapshot</button>
+              </div>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <section class="panel admin-only" hidden>
+        <div class="panel-header">
+          <h2>Latest Run</h2>
+          <div class="badge-row">
+            <span id="stability-badge" class="badge muted">No run yet</span>
+            <span id="publication-badge" class="badge muted">No result published</span>
+          </div>
+        </div>
+        <div id="run-summary" class="grid four summary-grid"></div>
+        <div class="actions wrap">
+          <button id="publish-latest-run" class="button primary">Publish latest run</button>
+        </div>
+        <div class="grid two">
+          <div class="card">
+            <label>
+              <span>Filter matches</span>
+              <input id="matches-filter" type="search" placeholder="Search hospitals or students">
+            </label>
+            <div id="matches-table"></div>
+          </div>
+          <div class="card">
+            <h3>Blocking pairs</h3>
+            <div id="blocking-pairs"></div>
+          </div>
+        </div>
+        <details id="trace-details" class="card trace-details">
+          <summary>Proposal trace</summary>
+          <div id="trace-table"></div>
+        </details>
+      </section>
+
+      <section class="panel status-panel">
+        <div class="panel-header">
+          <h2>Status</h2>
+        </div>
+        <pre id="status-log">Ready.</pre>
+      </section>
+    </main>
+
+    <script src="./shared.js"></script>
+    <script src="./admin.js"></script>
+  </body>
+</html>

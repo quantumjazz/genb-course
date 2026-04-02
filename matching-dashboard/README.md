@@ -11,7 +11,7 @@ The design follows the case closely:
 
 ## Architecture
 
-- `frontend/`: static dashboard that can be deployed to GitHub Pages, Netlify, Cloudflare Pages, or served locally.
+- `frontend/`: static landing page plus separate participant and admin surfaces that can be deployed to GitHub Pages, Netlify, Cloudflare Pages, or served locally.
 - `backend/`: small Python 3 API for Ubuntu LTS laptops. It uses only the standard library plus SQLite.
 
 GitHub Pages cannot itself host the centralized algorithm. The intended setup is:
@@ -27,7 +27,7 @@ For a classroom or pilot, this is realistic. For anything public-facing, add TLS
 - hospitals with capacities;
 - candidates with one seat each;
 - participant self-registration with only role and name;
-- a public classroom submission flow plus an admin control panel;
+- a public classroom submission page plus a separate admin console;
 - explicit market phases: registration open, ranking open, locked;
 - one normalized name per market, so the first role claim is binding;
 - incomplete rankings;
@@ -42,7 +42,7 @@ For a classroom or pilot, this is realistic. For anything public-facing, add TLS
 1. Participants open the frontend, choose a side, enter their name, and start or resume their own entry.
 2. During `registration_open`, the backend creates new roles automatically. A normalized name can only appear once in the whole market.
 3. The admin closes registration and opens `ranking_open` so participants can submit up to 10 opposite-side preferences.
-4. The admin then sets the market to `locked` and runs the centralized allocation on a frozen market.
+4. The admin then sets the market to `locked`, runs the centralized allocation on a frozen market, and publishes the chosen run.
 
 The current submission flow is intentionally lightweight: it uses only role and name, so it discourages duplicates but does not provide real authentication. If you need stronger control, the next step is per-role access codes or authenticated logins.
 
@@ -95,7 +95,7 @@ Then open:
 
 Or publish the contents of `frontend/` to GitHub Pages.
 
-The current frontend is wired to the production API at `https://matching.visiometrica.com`, so participants cannot switch the backend from the page. The page does not persist participant names or the admin key. If you need to point the dashboard at a different backend, change `API_BASE` in `frontend/app.js` before deploying.
+The current frontend is wired to the production API at `https://matching.visiometrica.com`, so participants cannot switch the backend from the page. The pages do not persist participant names or the admin key. If you need to point the dashboard at a different backend, change `API_BASE` in `frontend/shared.js` before deploying.
 
 ## Recommended Deployment Shape
 

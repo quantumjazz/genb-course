@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Participant Submission</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand-link" href="./index.html">Matching Dashboard</a>
+        <nav class="page-links">
+          <a class="page-link" href="./index.html">Home</a>
+          <a class="page-link current" href="./participant.html">Participant submission</a>
+          <a class="page-link" href="./admin.html">Admin console</a>
+        </nav>
+      </header>
+
+      <section class="hero">
+        <p class="eyebrow">Participant Surface</p>
+        <h1>Submit To The Central Office</h1>
+        <p class="hero-subtitle">Hospitals and students use the same public form</p>
+        <p class="lede">
+          Register your role, submit up to ten ranked preferences, and return later with
+          the same role and name to see your own published outcome.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Connection</h2>
+          <span id="connection-badge" class="badge muted">Public API not checked</span>
+        </div>
+        <div class="actions">
+          <button id="check-connection" class="button">Check connection</button>
+          <button id="refresh-state" class="button">Refresh market</button>
+        </div>
+        <p class="hint">
+          This page is for submissions only. Market control and publication happen in the admin console.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Market Status</h2>
+          <span id="market-status-badge" class="badge muted">No market loaded</span>
+        </div>
+        <div id="market-summary-grid" class="grid four summary-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Participant Submission</h2>
+          <span id="participant-market-badge" class="badge muted">No market loaded</span>
+        </div>
+        <div class="grid two">
+          <label>
+            <span>Role side</span>
+            <select id="participant-role-type">
+              <option value="candidate">Student</option>
+              <option value="hospital">Hospital</option>
+            </select>
+          </label>
+          <label>
+            <span>Your name</span>
+            <input id="participant-name" type="text" placeholder="Enter your name">
+          </label>
+        </div>
+        <div class="card role-builder">
+          <div class="split-header">
+            <div>
+              <h3 id="participant-role-title">Choose your role and enter your name</h3>
+              <p id="participant-role-meta" class="ranking-meta">
+                Register first, then wait for the central office to open the ranking phase.
+              </p>
+            </div>
+            <span id="participant-role-badge" class="badge muted">No entry</span>
+          </div>
+          <p class="hint">
+            The first registration for a normalized name locks that participant to one side of the market.
+          </p>
+          <div id="participant-ranking-note" class="hint ranking-note"></div>
+          <div id="participant-picker-grid" class="picker-grid" hidden>
+            <div class="card picker-panel">
+              <div class="panel-header compact-header">
+                <h3>Available options</h3>
+                <span id="participant-limit-badge" class="badge muted">Top 10</span>
+              </div>
+              <label>
+                <span>Search</span>
+                <input id="participant-choice-search" type="search" placeholder="Search by name or ID">
+              </label>
+              <div id="participant-available-list" class="choice-list"></div>
+            </div>
+            <div class="card picker-panel">
+              <div class="panel-header compact-header">
+                <h3>Selected choices</h3>
+                <span id="participant-selected-count" class="badge muted">0 / 10</span>
+              </div>
+              <div id="participant-selected-list" class="choice-list"></div>
+            </div>
+          </div>
+          <div class="actions">
+            <button id="participant-load" class="button">Start or continue</button>
+            <button id="participant-submit" class="button primary">Submit preferences</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Published Outcome</h2>
+          <span id="result-badge" class="badge muted">No published result</span>
+        </div>
+        <div id="result-summary-grid" class="grid four summary-grid"></div>
+        <div id="result-body"></div>
+      </section>
+
+      <section class="panel status-panel">
+        <div class="panel-header">
+          <h2>Status</h2>
+        </div>
+        <pre id="status-log">Ready.</pre>
+      </section>
+    </main>
+
+    <script src="./shared.js"></script>
+    <script src="./participant.js"></script>
+  </body>
+</html>

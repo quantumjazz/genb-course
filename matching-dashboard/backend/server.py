@@ -405,7 +405,8 @@ class MatchingStore:
 
                 CREATE TABLE IF NOT EXISTS market_state (
                     singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
-                    phase TEXT NOT NULL CHECK (phase IN ('registration_open', 'ranking_open', 'locked'))
+                    phase TEXT NOT NULL CHECK (phase IN ('registration_open', 'ranking_open', 'locked')),
+                    published_run_id INTEGER
                 );
 
                 CREATE TABLE IF NOT EXISTS participant_registry (
@@ -424,10 +425,23 @@ class MatchingStore:
                 ON CONFLICT(singleton_id) DO NOTHING
                 """
             )
+            self._migrate_schema(connection)
             self._ensure_registry(connection)
+
+    def _table_columns(self, connection, table_name):
+        return {
+            row["name"]
+            for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        }
+
+    def _migrate_schema(self, connection):
+        market_state_columns = self._table_columns(connection, "market_state")
+        if "published_run_id" not in market_state_columns:
+            connection.execute("ALTER TABLE market_state ADD COLUMN published_run_id INTEGER")
 
     def _invalidate_runs(self, connection):
         connection.execute("DELETE FROM runs")
+        self._clear_published_run(connection)
 
     def _get_phase(self, connection):
         row = connection.execute(
@@ -445,6 +459,30 @@ class MatchingStore:
             ON CONFLICT(singleton_id) DO UPDATE SET phase = excluded.phase
             """,
             (phase,),
+        )
+        if phase != "locked":
+            self._clear_published_run(connection)
+
+    def _get_published_run_id(self, connection):
+        row = connection.execute(
+            "SELECT published_run_id FROM market_state WHERE singleton_id = 1"
+        ).fetchone()
+        return row["published_run_id"] if row else None
+
+    def _clear_published_run(self, connection):
+        connection.execute(
+            "UPDATE market_state SET published_run_id = NULL WHERE singleton_id = 1"
+        )
+
+    def _set_published_run_id(self, connection, run_id):
+        current_phase = self._get_phase(connection)
+        connection.execute(
+            """
+            INSERT INTO market_state (singleton_id, phase, published_run_id)
+            VALUES (1, ?, ?)
+            ON CONFLICT(singleton_id) DO UPDATE SET published_run_id = excluded.published_run_id
+            """,
+            (current_phase, run_id),
         )
 
     def _rebuild_registry(self, connection):
@@ -583,11 +621,91 @@ class MatchingStore:
             }
         return submissions
 
+    def _hydrate_run(self, row):
+        if row is None:
+            return None
+        payload = json.loads(row["payload_json"])
+        payload["id"] = row["id"]
+        payload.setdefault("createdAt", row["created_at"])
+        payload.setdefault("proposerSide", row["proposer_side"])
+        return payload
+
+    def _run_summary(self, run_payload):
+        if run_payload is None:
+            return None
+        return {
+            "id": run_payload["id"],
+            "createdAt": run_payload["createdAt"],
+            "proposerSide": run_payload["proposerSide"],
+        }
+
     def _latest_run(self, connection):
         latest_row = connection.execute(
-            "SELECT payload_json FROM runs ORDER BY id DESC LIMIT 1"
+            "SELECT id, created_at, proposer_side, payload_json FROM runs ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        return json.loads(latest_row["payload_json"]) if latest_row else None
+        return self._hydrate_run(latest_row)
+
+    def _published_run(self, connection):
+        published_run_id = self._get_published_run_id(connection)
+        if published_run_id is None:
+            return None
+        row = connection.execute(
+            """
+            SELECT id, created_at, proposer_side, payload_json
+            FROM runs
+            WHERE id = ?
+            """,
+            (published_run_id,),
+        ).fetchone()
+        if row is None:
+            self._clear_published_run(connection)
+            return None
+        return self._hydrate_run(row)
+
+    def _public_match_payload(self, role_type, role_id, role_row, published_run, hospitals, candidates):
+        if published_run is None:
+            return None
+
+        hospital_by_id = {item["id"]: item for item in hospitals}
+        candidate_by_id = {item["id"]: item for item in candidates}
+
+        if role_type == "hospital":
+            match_ids = published_run["hospitalMatches"].get(role_id, [])
+            matches = [
+                {
+                    "roleType": "candidate",
+                    "id": candidate_id,
+                    "name": candidate_by_id.get(candidate_id, {}).get("name", candidate_id),
+                }
+                for candidate_id in match_ids
+            ]
+            return {
+                "runId": published_run["id"],
+                "createdAt": published_run["createdAt"],
+                "proposerSide": published_run["proposerSide"],
+                "matches": matches,
+                "matchedCount": len(matches),
+                "capacity": role_row["capacity"],
+            }
+
+        matched_hospital_id = published_run["candidateMatches"].get(role_id)
+        matches = []
+        if matched_hospital_id is not None:
+            matches.append(
+                {
+                    "roleType": "hospital",
+                    "id": matched_hospital_id,
+                    "name": hospital_by_id.get(matched_hospital_id, {}).get("name", matched_hospital_id),
+                }
+            )
+        return {
+            "runId": published_run["id"],
+            "createdAt": published_run["createdAt"],
+            "proposerSide": published_run["proposerSide"],
+            "matches": matches,
+            "matchedCount": len(matches),
+            "capacity": 1,
+        }
 
     def _next_available_id(self, connection, table_name, base_id):
         candidate_id = base_id
@@ -667,6 +785,7 @@ class MatchingStore:
             )
             submissions = self._load_submissions(connection)
             latest_run = self._latest_run(connection)
+            published_run = self._published_run(connection)
             submission_summary = self._build_submission_summary(
                 hospitals,
                 candidates,
@@ -684,6 +803,7 @@ class MatchingStore:
             "candidateRankings": candidate_rankings,
             "submissionSummary": submission_summary,
             "latestRun": latest_run,
+            "publishedRun": self._run_summary(published_run),
         }
 
     def export_public_market(self):
@@ -712,15 +832,13 @@ class MatchingStore:
                 candidate_rankings,
                 submissions,
             )
-            latest_run = self._latest_run(connection)
+            published_run = self._published_run(connection)
 
         return {
             "phase": phase,
             "rankingLimit": RANKING_LIMIT,
-            "hospitals": hospitals,
-            "candidates": candidates,
             "submissionCounts": submission_summary["counts"],
-            "hasRun": latest_run is not None,
+            "publishedRun": self._run_summary(published_run),
         }
 
     def export_public_role(self, role_type, role_id):
@@ -731,6 +849,9 @@ class MatchingStore:
             self._ensure_registry(connection)
             phase = self._get_phase(connection)
             submissions = self._load_submissions(connection)
+            hospitals = self._load_hospitals(connection)
+            candidates = self._load_candidates(connection)
+            published_run = self._published_run(connection)
             if role_type == "hospital":
                 row = connection.execute(
                     "SELECT id, name, capacity FROM hospitals WHERE id = ?",
@@ -744,7 +865,7 @@ class MatchingStore:
                     owner_column="hospital_id",
                     choice_column="candidate_id",
                 ).get(role_id, [])
-                choices = self._load_candidates(connection)
+                choices = candidates
             else:
                 row = connection.execute(
                     "SELECT id, name FROM candidates WHERE id = ?",
@@ -758,9 +879,17 @@ class MatchingStore:
                     owner_column="candidate_id",
                     choice_column="hospital_id",
                 ).get(role_id, [])
-                choices = self._load_hospitals(connection)
+                choices = hospitals
 
             metadata = submissions[role_type].get(role_id)
+            published_match = self._public_match_payload(
+                role_type=role_type,
+                role_id=role_id,
+                role_row=row,
+                published_run=published_run,
+                hospitals=hospitals,
+                candidates=candidates,
+            )
 
         return {
             "roleType": role_type,
@@ -771,6 +900,7 @@ class MatchingStore:
             "rankingLimit": RANKING_LIMIT,
             "submittedAt": metadata["submittedAt"] if metadata else None,
             "source": metadata["source"] if metadata else ("legacy" if ranking else None),
+            "publishedMatch": published_match,
         }
 
     def register_public_role(self, role_type, name):
@@ -1052,7 +1182,7 @@ class MatchingStore:
             connection.execute("DELETE FROM hospitals")
             connection.execute("DELETE FROM candidates")
             connection.execute("DELETE FROM participant_registry")
-            connection.execute("DELETE FROM runs")
+            self._invalidate_runs(connection)
             self._set_phase(connection, "registration_open")
 
     def load_demo(self):
@@ -1113,14 +1243,25 @@ class MatchingStore:
             proposer_side=proposer_side,
         )
         with self._connect() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 """
                 INSERT INTO runs (created_at, proposer_side, payload_json)
                 VALUES (?, ?, ?)
                 """,
                 (result["createdAt"], proposer_side, json_dumps(result)),
             )
+            result["id"] = cursor.lastrowid
         return result
+
+    def publish_latest_run(self):
+        with self._connect() as connection:
+            if self._get_phase(connection) != "locked":
+                raise ValueError("Lock the market before publishing a result.")
+            latest_run = self._latest_run(connection)
+            if latest_run is None:
+                raise ValueError("Run the algorithm before publishing a result.")
+            self._set_published_run_id(connection, latest_run["id"])
+        return self.export_state()
 
 
 class MatchingApplication:
@@ -1191,6 +1332,10 @@ class MatchingHandler(BaseHTTPRequestHandler):
                 role_id = str(body.get("roleId", "")).strip()
                 self.app.store.remove_role(role_type, role_id)
                 self._respond_json(self.app.store.export_state())
+                return
+            if parsed.path == "/api/admin/publish-latest-run":
+                self._require_admin()
+                self._respond_json(self.app.store.publish_latest_run())
                 return
             if parsed.path == "/api/public/register":
                 role_type = str(body.get("roleType", "")).strip().lower()
