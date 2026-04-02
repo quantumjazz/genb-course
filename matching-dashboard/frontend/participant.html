@@ -22,8 +22,8 @@
         <h1>Submit To The Central Office</h1>
         <p class="hero-subtitle">Hospitals and students use the same public form</p>
         <p class="lede">
-          Register your role, submit up to ten ranked preferences, and return later with
-          the same role and name to see your own published outcome.
+          Open your entry once, review your draft, submit up to ten ranked preferences,
+          and return later with the same role and name to see your own published outcome.
         </p>
       </section>
 
@@ -32,19 +32,18 @@
           <h2>Connection</h2>
           <span id="connection-badge" class="badge muted">Public API not checked</span>
         </div>
-        <div class="actions">
-          <button id="check-connection" class="button">Check connection</button>
-          <button id="refresh-state" class="button">Refresh market</button>
-        </div>
         <p class="hint">
-          This page is for submissions only. Market control and publication happen in the admin console.
+          This page updates automatically while visible. Market control and publication happen in the admin console.
         </p>
       </section>
 
       <section class="panel">
         <div class="panel-header">
           <h2>Market Status</h2>
-          <span id="market-status-badge" class="badge muted">No market loaded</span>
+          <div class="panel-header-actions">
+            <span id="market-status-badge" class="badge muted">No market loaded</span>
+            <button id="refresh-now" class="button subtle-button">Refresh now</button>
+          </div>
         </div>
         <div id="market-summary-grid" class="grid four summary-grid"></div>
       </section>
@@ -102,7 +101,8 @@
             </div>
           </div>
           <div class="actions">
-            <button id="participant-load" class="button">Start or continue</button>
+            <button id="participant-load" class="button primary">Open entry</button>
+            <button id="participant-reset" class="button" hidden>Switch participant</button>
             <button id="participant-submit" class="button primary">Submit preferences</button>
           </div>
         </div>

@@ -22,9 +22,25 @@
         <h1>Classroom Matching Dashboard</h1>
         <p class="hero-subtitle">GENB 070 Society, economy, business</p>
         <p class="lede">
-          Participants submit rankings to a central office. The office closes the market,
-          runs deferred acceptance, and publishes the final outcome.
+          This page is the public bulletin board of the central office. Check whether
+          registration or rankings are open, whether the market is locked, and whether
+          results have been published.
         </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Public Bulletin</h2>
+          <span id="bulletin-badge" class="badge muted">Loading market status</span>
+        </div>
+        <div id="bulletin-summary-grid" class="grid four summary-grid"></div>
+        <div class="card notice-card">
+          <p class="eyebrow">Current Notice</p>
+          <h3 id="bulletin-title">Loading market status</h3>
+          <p id="bulletin-message" class="lede compact">
+            The page is checking the public market status now.
+          </p>
+        </div>
       </section>
 
       <section class="panel">
@@ -77,5 +93,8 @@
         </div>
       </section>
     </main>
+
+    <script src="./shared.js"></script>
+    <script src="./home.js"></script>
   </body>
 </html>

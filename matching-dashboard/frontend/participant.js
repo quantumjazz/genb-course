@@ -11,6 +11,8 @@
     summaryBox,
   } = window.MatchingShared;
 
+  const AUTO_REFRESH_MS = 30000;
+
   const elements = {
     connectionBadge: document.getElementById("connection-badge"),
     marketStatusBadge: document.getElementById("market-status-badge"),
@@ -29,12 +31,12 @@
     participantLimitBadge: document.getElementById("participant-limit-badge"),
     participantSelectedCount: document.getElementById("participant-selected-count"),
     participantLoad: document.getElementById("participant-load"),
+    participantReset: document.getElementById("participant-reset"),
     participantSubmit: document.getElementById("participant-submit"),
+    refreshNow: document.getElementById("refresh-now"),
     resultBadge: document.getElementById("result-badge"),
     resultSummaryGrid: document.getElementById("result-summary-grid"),
     resultBody: document.getElementById("result-body"),
-    checkConnection: document.getElementById("check-connection"),
-    refreshState: document.getElementById("refresh-state"),
     statusLog: document.getElementById("status-log"),
   };
 
@@ -43,12 +45,18 @@
     participantRole: null,
     participantRankingOrder: [],
     participantChoiceQuery: "",
+    draftDirty: false,
+    refreshInFlight: false,
   };
 
   const log = createLogger(elements.statusLog);
 
   function getRankingLimit() {
     return state.publicMarket?.rankingLimit || state.participantRole?.rankingLimit || 10;
+  }
+
+  function isDocumentVisible() {
+    return document.visibilityState !== "hidden";
   }
 
   function currentRoleOptionsById() {
@@ -59,12 +67,12 @@
     return Object.fromEntries(role.choices.map((choice) => [choice.id, choice]));
   }
 
-  function normalizeParticipantRanking(rolePayload) {
+  function normalizeChoiceOrder(choiceIds, rolePayload) {
     const availableIds = new Set(rolePayload.choices.map((choice) => choice.id));
     const seen = new Set();
     const ranking = [];
     const limit = rolePayload.rankingLimit || getRankingLimit();
-    for (const choiceId of rolePayload.currentRanking || []) {
+    for (const choiceId of choiceIds || []) {
       if (!availableIds.has(choiceId) || seen.has(choiceId) || ranking.length >= limit) {
         continue;
       }
@@ -74,11 +82,41 @@
     return ranking;
   }
 
+  function normalizeParticipantRanking(rolePayload) {
+    return normalizeChoiceOrder(rolePayload.currentRanking || [], rolePayload);
+  }
+
+  function rankingsEqual(left, right) {
+    if (left.length !== right.length) {
+      return false;
+    }
+    return left.every((value, index) => value === right[index]);
+  }
+
+  function persistedParticipantRanking() {
+    return state.participantRole ? normalizeParticipantRanking(state.participantRole) : [];
+  }
+
+  function updateDraftDirty() {
+    state.draftDirty = state.participantRole
+      ? !rankingsEqual(state.participantRankingOrder, persistedParticipantRanking())
+      : false;
+  }
+
   function participantSelectionBadge() {
     const selected = state.participantRankingOrder.length;
     const limit = getRankingLimit();
     elements.participantSelectedCount.textContent = `${selected} / ${limit}`;
     elements.participantLimitBadge.textContent = `Top ${limit}`;
+  }
+
+  function clearActiveParticipant() {
+    state.participantRole = null;
+    state.participantRankingOrder = [];
+    state.participantChoiceQuery = "";
+    state.draftDirty = false;
+    elements.participantRoleType.value = "candidate";
+    elements.participantName.value = "";
   }
 
   function renderParticipantChoiceItem(choice, actionsHtml, rankLabel = null) {
@@ -202,6 +240,12 @@
     const market = state.publicMarket;
     const counts = market?.submissionCounts;
     const phase = market?.phase;
+    const hasActiveEntry = Boolean(state.participantRole);
+
+    elements.participantRoleType.disabled = hasActiveEntry;
+    elements.participantName.disabled = hasActiveEntry;
+    elements.participantLoad.hidden = hasActiveEntry;
+    elements.participantReset.hidden = !hasActiveEntry;
 
     if (!market || !counts) {
       setBadge(elements.participantMarketBadge, "No market loaded", "muted");
@@ -213,24 +257,24 @@
       );
     }
 
-    if (!state.participantRole) {
-      elements.participantRoleTitle.textContent = "Choose your role and enter your name";
+    if (!hasActiveEntry) {
+      elements.participantRoleTitle.textContent = "Choose your role and open your entry";
       if (!market) {
-        elements.participantRoleMeta.textContent = "Check the connection and make sure the backend is reachable.";
+        elements.participantRoleMeta.textContent = "Wait for the page to reach the public market service.";
         elements.participantRankingNote.textContent = "";
       } else if (phase === "registration_open") {
-        elements.participantRoleMeta.textContent = "Register now to claim one role in the market.";
-        elements.participantRankingNote.textContent = "Ranking opens only after the central office closes registration.";
+        elements.participantRoleMeta.textContent = "Registration is open. Create or reopen your entry.";
+        elements.participantRankingNote.textContent = "After you open your entry, this page will keep that draft active until you switch participants.";
       } else if (phase === "ranking_open") {
         elements.participantRoleMeta.textContent = "Registration is closed. Reopen your existing entry with the same role and name.";
-        elements.participantRankingNote.textContent = "You can submit or revise your ranking during this phase.";
+        elements.participantRankingNote.textContent = "After you open your entry, you can review and submit your ranking draft.";
       } else {
         elements.participantRoleMeta.textContent = market.publishedRun
           ? "The market is locked. Reopen your existing entry to view your published personal outcome."
           : "The market is locked. Public submissions are closed until the central office reopens the market.";
         elements.participantRankingNote.textContent = "No new public submissions can be made while the market is locked.";
       }
-      setBadge(elements.participantRoleBadge, "No entry", "muted");
+      setBadge(elements.participantRoleBadge, "No active draft", "muted");
       elements.participantLoad.disabled = !market;
       elements.participantSubmit.disabled = true;
       renderParticipantPicker(null);
@@ -240,27 +284,30 @@
     const role = state.participantRole.role;
     const side = roleLabel(state.participantRole.roleType);
     const capacityText = role.capacity !== undefined ? `, capacity ${role.capacity}` : "";
+    elements.participantRoleType.value = state.participantRole.roleType;
+    elements.participantName.value = role.name;
     elements.participantRoleTitle.textContent = `${side}: ${role.name}`;
-    elements.participantLoad.disabled = false;
 
     if (phase === "registration_open") {
-      elements.participantRoleMeta.textContent = `${role.id}${capacityText}. Registration saved. Ranking will open after the central office closes registration.`;
-      setBadge(elements.participantRoleBadge, "Registered", "ok");
-      elements.participantRankingNote.textContent = "No rankings can be submitted during the registration phase.";
+      elements.participantRoleMeta.textContent = `${role.id}${capacityText}. This entry is active on the page. Registration is saved, and rankings will open later.`;
+      setBadge(elements.participantRoleBadge, "Active draft", "ok");
+      elements.participantRankingNote.textContent = "Your identity is locked while this draft is open. Use Switch participant to leave it.";
       elements.participantSubmit.disabled = true;
       renderParticipantPicker(null);
       return;
     }
 
     if (phase === "ranking_open") {
-      elements.participantRoleMeta.textContent = `${role.id}${capacityText}. Choose up to ${getRankingLimit()} options in descending order. Last submission: ${formatDate(state.participantRole.submittedAt)}.`;
-      setBadge(
-        elements.participantRoleBadge,
-        state.participantRole.submittedAt ? "Submitted" : "Ready to rank",
-        state.participantRole.submittedAt ? "ok" : "warn",
-      );
-      elements.participantRankingNote.textContent = "Add up to ten options, then order them from best to worst.";
-      elements.participantSubmit.disabled = state.participantRankingOrder.length === 0;
+      elements.participantRoleMeta.textContent = `${role.id}${capacityText}. Review your ranking draft and submit when ready. Last submission: ${formatDate(state.participantRole.submittedAt)}.`;
+      if (state.draftDirty) {
+        setBadge(elements.participantRoleBadge, "Draft changed", "warn");
+      } else if (state.participantRole.submittedAt) {
+        setBadge(elements.participantRoleBadge, "Submitted", "ok");
+      } else {
+        setBadge(elements.participantRoleBadge, "Review draft", "warn");
+      }
+      elements.participantRankingNote.textContent = "Your identity is locked while this draft is open. Use Switch participant to leave it.";
+      elements.participantSubmit.disabled = state.participantRankingOrder.length === 0 || !state.draftDirty;
       renderParticipantPicker("ranking_open");
       return;
     }
@@ -268,7 +315,7 @@
     elements.participantRoleMeta.textContent = `${role.id}${capacityText}. The market is locked. Last submission: ${formatDate(state.participantRole.submittedAt)}.`;
     setBadge(
       elements.participantRoleBadge,
-      state.participantRole.submittedAt ? "Locked" : "Locked without submission",
+      state.participantRole.submittedAt ? "Locked draft" : "Locked without submission",
       state.participantRole.submittedAt ? "muted" : "warn",
     );
     elements.participantRankingNote.textContent = state.publicMarket?.publishedRun
@@ -312,9 +359,9 @@
         summaryBox("Status", "Published"),
         summaryBox("Proposer side", roleLabel(publishedRun.proposerSide)),
         summaryBox("Run", formatDate(publishedRun.createdAt, "n/a")),
-        summaryBox("Assigned", "Load your entry"),
+        summaryBox("Assigned", "Open your entry"),
       ].join("");
-      elements.resultBody.innerHTML = `<p class="empty">Reopen your entry with the same role and name to view your personal published outcome.</p>`;
+      elements.resultBody.innerHTML = `<p class="empty">Open your entry with the same role and name to view your personal published outcome.</p>`;
       return;
     }
 
@@ -331,7 +378,7 @@
       return;
     }
 
-    const hasAssignments = Boolean(match && match.matches.length);
+    const hasAssignments = Boolean(match.matches.length);
     setBadge(
       elements.resultBadge,
       hasAssignments ? "Published personal outcome" : "Published: no assignment",
@@ -375,69 +422,86 @@
     renderPublishedResult();
   }
 
-  async function refreshPublicMarket({ quiet = false } = {}) {
-    state.publicMarket = await publicApi("/api/public/market", { method: "GET" });
-    if (!quiet) {
-      log("Public market refreshed.");
-    }
+  async function refreshPublicMarket() {
+    const market = await publicApi("/api/public/market", { method: "GET" });
+    state.publicMarket = market;
   }
 
-  async function refreshParticipantRole({ quiet = false } = {}) {
+  async function refreshParticipantRole() {
     if (!state.participantRole) {
       return;
     }
-    try {
-      const payload = await publicApi(
-        `/api/public/role?roleType=${encodeURIComponent(state.participantRole.roleType)}&roleId=${encodeURIComponent(state.participantRole.role.id)}`,
-        { method: "GET" },
-      );
-      state.participantRole = payload;
-      state.participantRankingOrder = normalizeParticipantRanking(payload);
-    } catch (error) {
-      state.participantRole = null;
-      state.participantRankingOrder = [];
-      state.participantChoiceQuery = "";
-      if (!quiet) {
-        log(error.message);
-      }
+
+    const previousDraft = [...state.participantRankingOrder];
+    const payload = await publicApi(
+      `/api/public/role?roleType=${encodeURIComponent(state.participantRole.roleType)}&roleId=${encodeURIComponent(state.participantRole.role.id)}`,
+      { method: "GET" },
+    );
+    const serverRanking = normalizeParticipantRanking(payload);
+    state.participantRole = payload;
+    if (state.draftDirty) {
+      state.participantRankingOrder = normalizeChoiceOrder(previousDraft, payload);
+      state.draftDirty = !rankingsEqual(state.participantRankingOrder, serverRanking);
+    } else {
+      state.participantRankingOrder = serverRanking;
+      state.draftDirty = false;
     }
   }
 
-  async function registerParticipant({ quiet = false } = {}) {
+  async function registerParticipant() {
     const roleType = elements.participantRoleType.value;
     const name = elements.participantName.value.trim();
     if (!name) {
-      state.participantRole = null;
-      state.participantRankingOrder = [];
-      state.participantChoiceQuery = "";
-      if (!quiet) {
-        throw new Error("Enter your name before starting your entry.");
-      }
-      return;
+      throw new Error("Enter your name before opening your entry.");
     }
-    state.participantRole = await publicApi("/api/public/register", {
+
+    const payload = await publicApi("/api/public/register", {
       method: "POST",
       body: JSON.stringify({
         roleType,
         name,
       }),
     });
-    state.participantRankingOrder = normalizeParticipantRanking(state.participantRole);
+
+    state.participantRole = payload;
+    state.participantRankingOrder = normalizeParticipantRanking(payload);
     state.participantChoiceQuery = "";
+    state.draftDirty = false;
     elements.participantName.value = state.participantRole.role.name;
-    if (!quiet) {
-      log(
-        `${state.participantRole.created ? "Created" : "Loaded"} ${roleLabel(roleType).toLowerCase()} entry '${state.participantRole.role.name}'.`,
-      );
-    }
+    log(
+      `${state.participantRole.created ? "Created" : "Loaded"} ${roleLabel(roleType).toLowerCase()} entry '${state.participantRole.role.name}'.`,
+    );
   }
 
   async function refreshAll({ quiet = false } = {}) {
-    await refreshPublicMarket({ quiet: true });
-    await refreshParticipantRole({ quiet: true });
-    renderAll();
-    if (!quiet) {
-      log("Refreshed participant state.");
+    if (state.refreshInFlight) {
+      return;
+    }
+
+    state.refreshInFlight = true;
+    try {
+      await refreshPublicMarket();
+      await refreshParticipantRole();
+      renderAll();
+      if (!quiet) {
+        log("Refreshed participant state.");
+      }
+    } catch (error) {
+      renderAll();
+      if (!quiet) {
+        log(error.message);
+      }
+      throw error;
+    } finally {
+      state.refreshInFlight = false;
+    }
+  }
+
+  async function passiveRefresh(failureMessage) {
+    try {
+      await refreshAll({ quiet: true });
+    } catch (error) {
+      log(`${failureMessage} ${error.message}`);
     }
   }
 
@@ -449,11 +513,13 @@
       return;
     }
     state.participantRankingOrder = [...state.participantRankingOrder, choiceId];
+    updateDraftDirty();
     renderParticipantPanel();
   }
 
   function removeParticipantChoice(choiceId) {
     state.participantRankingOrder = state.participantRankingOrder.filter((item) => item !== choiceId);
+    updateDraftDirty();
     renderParticipantPanel();
   }
 
@@ -465,12 +531,13 @@
     const order = [...state.participantRankingOrder];
     [order[index], order[nextIndex]] = [order[nextIndex], order[index]];
     state.participantRankingOrder = order;
+    updateDraftDirty();
     renderParticipantPanel();
   }
 
   async function submitParticipantRanking() {
     if (!state.participantRole) {
-      log("Load your entry before submitting preferences.");
+      log("Open your entry before submitting preferences.");
       return;
     }
     const payload = await publicApi("/api/public/submit", {
@@ -483,42 +550,31 @@
     });
     state.participantRole = payload;
     state.participantRankingOrder = normalizeParticipantRanking(payload);
-    await refreshPublicMarket({ quiet: true });
+    state.draftDirty = false;
+    await refreshPublicMarket();
     renderAll();
     log(`Submitted preferences for ${roleLabel(payload.roleType).toLowerCase()} '${payload.role.name}'.`);
   }
 
   function attachHandlers() {
-    elements.checkConnection.addEventListener("click", async () => {
+    elements.refreshNow.addEventListener("click", async () => {
       try {
         await refreshAll();
       } catch (error) {
-        renderAll();
-        log(error.message);
-      }
-    });
-
-    elements.refreshState.addEventListener("click", async () => {
-      try {
-        await refreshAll();
-      } catch (error) {
-        renderAll();
-        log(error.message);
+        // `refreshAll` already logged the error.
       }
     });
 
     elements.participantRoleType.addEventListener("change", () => {
-      state.participantRole = null;
-      state.participantRankingOrder = [];
-      state.participantChoiceQuery = "";
-      renderAll();
+      if (!state.participantRole) {
+        renderAll();
+      }
     });
 
     elements.participantName.addEventListener("input", () => {
-      state.participantRole = null;
-      state.participantRankingOrder = [];
-      state.participantChoiceQuery = "";
-      renderAll();
+      if (!state.participantRole) {
+        renderAll();
+      }
     });
 
     elements.participantChoiceSearch.addEventListener("input", (event) => {
@@ -529,15 +585,18 @@
     elements.participantLoad.addEventListener("click", async () => {
       try {
         await registerParticipant();
-        await refreshPublicMarket({ quiet: true });
+        await refreshPublicMarket();
         renderAll();
       } catch (error) {
-        state.participantRole = null;
-        state.participantRankingOrder = [];
-        state.participantChoiceQuery = "";
         renderAll();
         log(error.message);
       }
+    });
+
+    elements.participantReset.addEventListener("click", () => {
+      clearActiveParticipant();
+      renderAll();
+      log("Cleared the active participant draft.");
     });
 
     elements.participantSubmit.addEventListener("click", async () => {
@@ -548,6 +607,22 @@
         log(error.message);
       }
     });
+
+    window.addEventListener("focus", () => {
+      passiveRefresh("Automatic refresh failed.");
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (isDocumentVisible()) {
+        passiveRefresh("Automatic refresh failed.");
+      }
+    });
+
+    setInterval(() => {
+      if (isDocumentVisible()) {
+        passiveRefresh("Automatic refresh failed.");
+      }
+    }, AUTO_REFRESH_MS);
 
     document.body.addEventListener("click", (event) => {
       const addButton = event.target.closest("[data-add-choice]");

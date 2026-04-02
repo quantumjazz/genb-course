@@ -156,6 +156,14 @@ h4 {
   margin-bottom: 1rem;
 }
 
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .compact-header {
   margin-bottom: 0.75rem;
 }
@@ -216,6 +224,27 @@ h4 {
   margin-top: 1rem;
   color: var(--accent);
   font-weight: 700;
+}
+
+.notice-card {
+  margin-top: 1rem;
+  background:
+    linear-gradient(180deg, rgba(13, 106, 110, 0.08), rgba(13, 106, 110, 0.02)),
+    linear-gradient(120deg, rgba(182, 89, 47, 0.06), transparent 55%);
+}
+
+.notice-card h3 {
+  margin-top: 0.15rem;
+}
+
+.subtle-button {
+  padding: 0.58rem 0.85rem;
+  background: rgba(31, 42, 46, 0.08);
+  color: var(--muted);
+}
+
+.subtle-button:hover {
+  background: rgba(31, 42, 46, 0.14);
 }
 
 .form-card {
@@ -530,6 +559,7 @@ textarea {
     align-items: stretch;
   }
 
+  .panel-header-actions,
   .badge-row {
     justify-content: flex-start;
   }
