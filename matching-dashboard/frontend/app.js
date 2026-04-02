@@ -1,7 +1,6 @@
-const SETTINGS_KEY = "matching-dashboard-settings";
+const API_BASE = "https://matching.visiometrica.com";
 
 const elements = {
-  apiBase: document.getElementById("api-base"),
   adminKey: document.getElementById("admin-key"),
   connectionBadge: document.getElementById("connection-badge"),
   adminBadge: document.getElementById("admin-badge"),
@@ -108,38 +107,8 @@ function getRankingLimit() {
   return state.publicMarket?.rankingLimit || state.participantRole?.rankingLimit || 10;
 }
 
-function saveSettings() {
-  localStorage.setItem(
-    SETTINGS_KEY,
-    JSON.stringify({
-      apiBase: elements.apiBase.value.trim(),
-    }),
-  );
-}
-
-function loadSettings() {
-  const raw = localStorage.getItem(SETTINGS_KEY);
-  if (!raw) {
-    elements.apiBase.value = "";
-    return;
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    elements.apiBase.value = parsed.apiBase || "";
-  } catch {
-    elements.apiBase.value = "";
-  }
-}
-
-function getApiBase() {
-  return elements.apiBase.value.trim().replace(/\/$/, "");
-}
-
 async function request(path, options = {}, includeAdmin = false) {
-  const apiBase = getApiBase();
-  if (!apiBase) {
-    throw new Error("Set the API base URL first.");
-  }
+  const apiBase = API_BASE.replace(/\/$/, "");
   if (window.location.protocol === "https:" && apiBase.startsWith("http://")) {
     throw new Error("This page is on HTTPS, so the API base URL must also use HTTPS.");
   }
@@ -833,14 +802,8 @@ async function adminMutate(path, body, successMessage) {
 }
 
 function attachHandlers() {
-  document.getElementById("save-settings").addEventListener("click", () => {
-    saveSettings();
-    log("Settings saved locally.");
-  });
-
   document.getElementById("check-connection").addEventListener("click", async () => {
     try {
-      saveSettings();
       await refreshAll();
     } catch (error) {
       renderAll();
@@ -1123,7 +1086,6 @@ function attachHandlers() {
 }
 
 async function init() {
-  loadSettings();
   renderAll();
   attachHandlers();
   try {

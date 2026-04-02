@@ -95,7 +95,7 @@ Then open:
 
 Or publish the contents of `frontend/` to GitHub Pages.
 
-Because GitHub Pages is static, the dashboard lets you type the API base URL directly into the page. The page stores only that API base URL locally; it does not persist participant names or the admin key.
+The current frontend is wired to the production API at `https://matching.visiometrica.com`, so participants cannot switch the backend from the page. The page does not persist participant names or the admin key. If you need to point the dashboard at a different backend, change `API_BASE` in `frontend/app.js` before deploying.
 
 ## Recommended Deployment Shape
 
