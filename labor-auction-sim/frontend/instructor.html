@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Instructor · Labor Auction</title>
+    <link rel="stylesheet" href="styles.css?v=2">
+  </head>
+  <body>
+    <div class="shell wide">
+      <header class="topbar">
+        <a class="brand-link" href="./">Labor Auction Sim</a>
+        <nav class="page-links">
+          <a class="page-link" href="./">Home</a>
+          <a class="page-link" href="./student.html">Student</a>
+          <a class="page-link current" href="./instructor.html">Instructor</a>
+          <a class="page-link" href="./dashboard.html">Projection</a>
+        </nav>
+      </header>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Instructor console</h2>
+          <span class="badge muted" id="api-host">—</span>
+        </div>
+        <label>
+          <span>Admin key</span>
+          <input type="password" id="admin-key" autocomplete="off" placeholder="LABOR_ADMIN_KEY value">
+        </label>
+        <div class="actions">
+          <button class="button" id="save-key">Remember on this device</button>
+          <button class="button" id="forget-key">Forget key</button>
+        </div>
+        <p class="hint" style="margin-top:0.6rem;">The admin key is the shared secret set as the server's <code>LABOR_ADMIN_KEY</code>. It is required to create and control sessions.</p>
+      </section>
+
+      <section class="panel" id="list-panel">
+        <div class="panel-header">
+          <h2>Existing sessions</h2>
+          <div class="panel-header-actions">
+            <button class="button" id="refresh-list">Refresh</button>
+          </div>
+        </div>
+        <div id="sessions-list"><p class="hint">Save your admin key, then press Refresh.</p></div>
+      </section>
+
+      <section class="panel" id="create-panel">
+        <div class="panel-header"><h2>Create a new session</h2></div>
+        <div class="grid four">
+          <label><span>Rounds</span><input type="number" id="p-t-rounds" value="10" min="1" max="50"></label>
+          <label><span>Auction duration (s)</span><input type="number" id="p-duration-auction" value="25" min="5"></label>
+          <label><span>Effort duration (s)</span><input type="number" id="p-duration-effort" value="20" min="5"></label>
+          <label><span>Resolution (s)</span><input type="number" id="p-duration-resolution" value="15" min="5"></label>
+          <label><span>Backup wage (ŵ)</span><input type="number" id="p-w-outside" value="1000" min="0"></label>
+          <label><span>Shirk bonus (g)</span><input type="number" id="p-g" value="1500" min="0"></label>
+          <label><span>Effort cost (c)</span><input type="number" id="p-c-effort" value="500" min="0"></label>
+          <label><span>Firing penalty (rounds)</span><input type="number" id="p-firing" value="1" min="0" max="10"></label>
+        </div>
+        <h3 style="margin-top:1rem;">Firm types</h3>
+        <div id="firm-types"></div>
+        <details class="advanced-tools" style="margin-top:1rem;">
+          <summary>Advanced</summary>
+          <div class="advanced-body grid three">
+            <label><span>Wage adjust α (up-speed)</span><input type="number" id="p-alpha" value="1.0" step="0.1" min="0"></label>
+            <label><span>Wage adjust β (decay)</span><input type="number" id="p-beta" value="0.3" step="0.1" min="0"></label>
+            <label><span>w_max = w_base × …</span><input type="number" id="p-wmax" value="2.0" step="0.1" min="1"></label>
+            <label style="align-items:center;"><span>Heterogeneous g</span>
+              <select id="p-heter"><option value="false">off</option><option value="true">on (±spread)</option></select></label>
+            <label><span>g spread (± fraction)</span><input type="number" id="p-spread" value="0.2" step="0.05" min="0" max="1"></label>
+          </div>
+        </details>
+        <div class="actions">
+          <button class="button primary" id="create-session">Create session</button>
+        </div>
+      </section>
+
+      <section class="panel" id="control-panel" hidden>
+        <div class="panel-header">
+          <h2>Session <span id="active-code" style="font-family:SFMono-Regular,monospace; letter-spacing:0.2em;">—</span></h2>
+          <div class="panel-header-actions">
+            <span class="badge" id="active-phase">—</span>
+            <span class="badge muted" id="active-round">Round — of —</span>
+            <span class="badge muted" id="active-timer">—</span>
+          </div>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-box"><span class="muted-text">Students joined</span><strong id="m-students">0</strong></div>
+          <div class="summary-box"><span class="muted-text">Employed now</span><strong id="m-employed">0</strong></div>
+          <div class="summary-box"><span class="muted-text">Backup / sitting</span><strong id="m-backup">0</strong></div>
+          <div class="summary-box"><span class="muted-text">Caught this round</span><strong id="m-caught">0</strong></div>
+        </div>
+        <div class="actions wrap">
+          <button class="button primary" id="btn-start">Start session</button>
+          <button class="button" id="btn-advance">Advance phase ▶︎</button>
+          <button class="button warn" id="btn-pause">Pause</button>
+          <button class="button" id="btn-resume" hidden>Resume</button>
+          <button class="button" id="btn-extend-10">+10s</button>
+          <button class="button" id="btn-extend-30">+30s</button>
+          <button class="button" id="btn-extend-60">+60s</button>
+          <button class="button danger" id="btn-end" hidden>End session</button>
+        </div>
+        <div class="actions wrap" style="margin-top:0.5rem;">
+          <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.95rem; color:var(--muted);">
+            <input type="checkbox" id="reveal-toggle" style="width:auto;">
+            <span>Reveal hidden parameters on projection dashboard</span>
+          </label>
+          <a class="button" id="dashboard-link" href="./dashboard.html" target="_blank" rel="noopener">Open projection ↗</a>
+          <a class="button" id="csv-link" download>Export CSV</a>
+          <button class="button danger" id="btn-delete">Delete session</button>
+        </div>
+
+        <h3 style="margin-top:1.2rem;">Broadcast message</h3>
+        <textarea id="broadcast-msg" rows="2" placeholder="e.g. Round 6 coming up — think carefully!"></textarea>
+        <div class="actions">
+          <button class="button" id="btn-broadcast">Send</button>
+          <button class="button" id="btn-broadcast-clear">Clear</button>
+        </div>
+
+        <details class="advanced-tools">
+          <summary>Live parameter tuning</summary>
+          <div class="advanced-body">
+            <div class="grid four">
+              <label><span>Backup wage (ŵ)</span><input type="number" id="t-w-outside" min="0"></label>
+              <label><span>Shirk bonus (g)</span><input type="number" id="t-g" min="0"></label>
+              <label><span>Effort cost (c)</span><input type="number" id="t-c-effort" min="0"></label>
+              <label><span>Firing penalty</span><input type="number" id="t-firing" min="0" max="10"></label>
+            </div>
+            <p class="hint" id="tune-status" style="margin:0.8rem 0 0;"></p>
+            <h4 style="margin-top:0.8rem;">Firm types</h4>
+            <div id="tune-firm-types"></div>
+            <div class="actions"><button class="button" id="btn-apply-params">Apply changes next round</button></div>
+          </div>
+        </details>
+
+        <h3 style="margin-top:1.2rem;">Roster</h3>
+        <p class="hint" style="margin-top:-0.2rem;">The server never stores faculty IDs. Roster rows show each student's anonymous session token. To match tokens back to real people, use the reverse-lookup below.</p>
+        <div id="roster"><p class="empty">No students yet.</p></div>
+
+        <details class="advanced-tools" style="margin-top:1rem;">
+          <summary>Roster reverse-lookup (token ↔ faculty ID)</summary>
+          <div class="advanced-body">
+            <p class="hint">Paste your class roster of faculty IDs (one per line, or comma-separated). The server recomputes the tokens deterministically for this session and returns the mapping. The mapping is shown here only — nothing is saved on the server.</p>
+            <textarea id="lookup-input" rows="4" placeholder="F123456&#10;F234567&#10;F345678" style="font-family:SFMono-Regular,monospace;"></textarea>
+            <div class="actions">
+              <button class="button" id="btn-lookup">Compute tokens</button>
+              <button class="button" id="btn-lookup-clear">Clear</button>
+              <button class="button" id="btn-lookup-csv">Download joined CSV</button>
+            </div>
+            <div id="lookup-results" style="margin-top:0.6rem;"></div>
+          </div>
+        </details>
+
+        <h3 style="margin-top:1.2rem;">Firms right now</h3>
+        <div id="firms-detail"></div>
+      </section>
+
+      <section class="panel">
+        <details class="advanced-tools">
+          <summary>Status log</summary>
+          <div class="advanced-body">
+            <pre id="status-log"></pre>
+          </div>
+        </details>
+      </section>
+    </div>
+    <script src="shared.js?v=2"></script>
+    <script src="instructor.js?v=2"></script>
+  </body>
+</html>

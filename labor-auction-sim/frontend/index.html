@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Labor Auction — Classroom Simulation</title>
+    <link rel="stylesheet" href="styles.css?v=2">
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <a class="brand-link" href="./">Labor Auction Sim</a>
+        <nav class="page-links">
+          <a class="page-link current" href="./">Home</a>
+          <a class="page-link" href="./student.html">Student</a>
+          <a class="page-link" href="./instructor.html">Instructor</a>
+          <a class="page-link" href="./dashboard.html">Projection</a>
+        </nav>
+      </header>
+
+      <section class="hero">
+        <p class="eyebrow">Milgrom &amp; Roberts · Chapter 8</p>
+        <h1>A 15-minute experiment in wages, effort and shirking.</h1>
+        <p class="lede">
+          Each student plays a worker looking for a job. Bot-controlled firms post wages that adjust
+          from round to round as they observe whether their workers put in effort. The class will
+          watch aggregate wages, shirking, and unemployment emerge on a shared dashboard — then
+          debrief the pattern afterwards.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header"><h2>Pick your seat</h2></div>
+        <div class="grid three">
+          <a class="card" href="./student.html" style="display:grid; gap:.4rem;">
+            <span class="eyebrow">For students</span>
+            <strong style="font-size:1.15rem;">I'm joining the game</strong>
+            <span class="hint">Enter your faculty number and screen name to join the current class.</span>
+          </a>
+          <a class="card" href="./instructor.html" style="display:grid; gap:.4rem;">
+            <span class="eyebrow">For the instructor</span>
+            <strong style="font-size:1.15rem;">I'm running the session</strong>
+            <span class="hint">Create a session, tune parameters, start rounds, and export results.</span>
+          </a>
+          <a class="card" href="./dashboard.html" style="display:grid; gap:.4rem;">
+            <span class="eyebrow">Projection</span>
+            <strong style="font-size:1.15rem;">I'm projecting on screen</strong>
+            <span class="hint">Live charts of wages, shirking, and unemployment. Plus the leaderboard.</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header"><h2>How the session runs</h2></div>
+        <ol class="lede" style="line-height:1.7;">
+          <li>The instructor opens <b>Instructor</b> and creates the class session.</li>
+          <li>Students open <b>Student</b> on any phone or laptop and enter their faculty ID plus a screen name.</li>
+          <li>The instructor presses <em>Start</em>. Each round has three phases: an auction where students pick a job, an effort phase where they choose work hard or slack off, and a resolution phase.</li>
+          <li>The <b>Projection</b> page shows live aggregate charts — point a browser at it from the classroom computer.</li>
+          <li>At the end, the instructor downloads a CSV of every round and every choice.</li>
+        </ol>
+      </section>
+    </div>
+  </body>
+</html>

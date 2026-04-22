@@ -12,3 +12,6 @@ literature/
 
 # Git internal
 .gitkeep
+
+# Claude Code local tooling
+.claude/

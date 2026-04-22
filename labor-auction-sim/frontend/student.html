@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Student · Labor Auction</title>
+    <link rel="stylesheet" href="styles.css?v=2">
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <a class="brand-link" href="./">Labor Auction Sim</a>
+        <nav class="page-links">
+          <a class="page-link" href="./">Home</a>
+          <a class="page-link current" href="./student.html">Student</a>
+          <a class="page-link" href="./instructor.html">Instructor</a>
+          <a class="page-link" href="./dashboard.html">Projection</a>
+        </nav>
+      </header>
+
+      <!-- Login panel -->
+      <section class="panel" id="login-panel">
+        <div class="panel-header">
+          <h2>Join the current class</h2>
+          <span class="badge muted" id="login-hint">Enter your faculty number and screen name</span>
+        </div>
+        <form id="login-form" class="grid two">
+          <label>
+            <span>Faculty ID</span>
+            <input name="faculty_id" id="field-faculty" autocomplete="off" required placeholder="e.g. F123456" style="text-transform:uppercase;">
+          </label>
+          <label>
+            <span>Display name (visible on leaderboard)</span>
+            <input name="display_name" id="field-name" autocomplete="off" required maxlength="40" placeholder="e.g. Ivan">
+          </label>
+          <div class="actions" style="grid-column: 1 / -1;">
+            <button class="button primary" type="submit" id="login-submit">Join</button>
+            <button class="button" type="button" id="leave-btn" hidden>Leave session</button>
+          </div>
+        </form>
+        <p class="hint" style="margin-top:0.8rem;">
+          Your faculty ID is converted into a session token and is not stored in the server database.
+          Your display name is what other students see on the leaderboard.
+        </p>
+      </section>
+
+      <!-- Game panel (hidden until logged in) -->
+      <section id="game" hidden>
+        <div class="status-hero panel" style="margin-top:1rem;">
+          <div>
+            <div class="eyebrow" style="color:#f2efe8;">You are</div>
+            <div class="name" id="me-name">—</div>
+            <div class="sub" id="me-sub">Round —</div>
+          </div>
+          <div>
+            <div class="eyebrow" style="color:#f2efe8;">Cumulative earnings</div>
+            <div class="big-number" id="me-cumulative">0</div>
+            <div class="sub" id="me-rank">Rank —</div>
+            <button class="button" type="button" id="leave-game-btn" style="margin-top:0.8rem;">Leave class</button>
+          </div>
+        </div>
+
+        <div id="broadcast-banner" class="broadcast-banner panel" hidden style="margin-top:1rem;"></div>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2 id="phase-title">Loading…</h2>
+            <div class="panel-header-actions">
+              <span class="badge" id="phase-badge">—</span>
+              <span class="badge muted" id="phase-timer">—</span>
+            </div>
+          </div>
+          <div class="timer-bar"><div class="timer-bar-fill" id="timer-fill"></div></div>
+
+          <!-- Lobby -->
+          <div id="phase-lobby" hidden style="margin-top:1rem;">
+            <p class="lede compact">Waiting for the instructor to start the session. Sit tight.</p>
+            <p class="hint"><span class="dot-pulse"></span> Connected.</p>
+          </div>
+
+          <!-- Auction -->
+          <div id="phase-auction" hidden style="margin-top:1rem;">
+            <p class="lede compact">Pick one job below. Slots fill first-come, first-served. If you don't pick, you're auto-assigned to the backup job.</p>
+            <div id="job-grid" class="job-grid" style="margin-top:1rem;"></div>
+            <div class="backup-card">
+              <div class="panel-header" style="margin-bottom:0.6rem;">
+                <h3>Backup job</h3>
+                <span class="badge muted" id="backup-wage">wage —</span>
+              </div>
+              <p class="hint" style="margin:0 0 0.8rem;">Always available. Low pay, no boss watching — you can slack off safely, but you can't get promoted.</p>
+              <button class="button warn" id="take-backup">Take backup job</button>
+            </div>
+            <div id="sitting-out-notice" class="result-card caught" hidden style="margin-top:1rem;">
+              <h3>You were fired last round.</h3>
+              <p class="hint">You must sit out this round. You'll be able to apply again next round.</p>
+            </div>
+          </div>
+
+          <!-- Effort -->
+          <div id="phase-effort" hidden style="margin-top:1rem;">
+            <div class="card" id="effort-summary"></div>
+            <div class="effort-grid">
+              <button class="button huge work" id="btn-work">Work hard<span class="sub">Steady paycheque, minus effort cost.</span></button>
+              <button class="button huge slack" id="btn-slack">Slack off<span class="sub">Bigger payoff if you get away with it.</span></button>
+            </div>
+            <p class="hint" style="margin-top:0.9rem;" id="effort-hint">No answer defaults to Work hard.</p>
+          </div>
+
+          <!-- Resolution -->
+          <div id="phase-resolution" hidden style="margin-top:1rem;">
+            <div class="result-card" id="result-card"></div>
+          </div>
+
+          <!-- Ended -->
+          <div id="phase-ended" hidden style="margin-top:1rem;">
+            <div class="result-card">
+              <h2>Session complete.</h2>
+              <p class="lede compact">Thanks for playing. Your instructor will walk through the results now.</p>
+              <p id="final-summary" class="muted-text"></p>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>My history</h2>
+            <span class="badge muted" id="history-count">0 rounds played</span>
+          </div>
+          <div id="history-body"><p class="empty">Nothing yet — you'll see a row appear after each round.</p></div>
+        </section>
+      </section>
+
+      <section class="panel" style="margin-top:1rem;">
+        <details class="advanced-tools">
+          <summary>Status log</summary>
+          <div class="advanced-body">
+            <pre id="status-log"></pre>
+          </div>
+        </details>
+      </section>
+    </div>
+    <script src="shared.js?v=2"></script>
+    <script src="student.js?v=2"></script>
+  </body>
+</html>

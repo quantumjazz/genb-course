@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Projection · Labor Auction</title>
+    <link rel="stylesheet" href="styles.css?v=2">
+  </head>
+  <body class="projection-body">
+    <div class="shell wide">
+      <header class="topbar">
+        <a class="brand-link" href="./">Labor Auction Sim</a>
+        <nav class="page-links">
+          <a class="page-link" href="./">Home</a>
+          <a class="page-link" href="./student.html">Student</a>
+          <a class="page-link" href="./instructor.html">Instructor</a>
+          <a class="page-link current" href="./dashboard.html">Projection</a>
+        </nav>
+      </header>
+
+      <section id="connect-panel" class="panel">
+        <div class="panel-header"><h2>Connect to session</h2></div>
+        <form id="connect-form" class="grid two">
+          <label><span>Session code</span>
+            <input id="field-code" autocomplete="off" placeholder="e.g. K7X2MP" style="text-transform:uppercase; letter-spacing:0.2em;" required>
+          </label>
+          <div class="actions" style="align-self:end;">
+            <button class="button primary" type="submit">Connect</button>
+          </div>
+        </form>
+        <p class="hint">This page shows the live class-wide view. Point your classroom projector here and leave it open.</p>
+      </section>
+
+      <section id="projection" hidden>
+        <div class="status-hero panel">
+          <div>
+            <div class="eyebrow" style="color:#f2efe8;">Session</div>
+            <div class="name" id="session-code">—</div>
+            <div class="sub" id="session-phase">—</div>
+          </div>
+          <div>
+            <div class="eyebrow" style="color:#f2efe8;">Round</div>
+            <div class="big-number" id="session-round">—</div>
+            <div class="sub" id="session-timer">—</div>
+          </div>
+        </div>
+
+        <div id="broadcast-banner" class="broadcast-banner panel" hidden></div>
+
+        <div class="projection">
+          <div class="left">
+            <div class="panel">
+              <div class="panel-header"><h2>Average posted wage</h2>
+                <div class="legend" id="wage-legend"></div></div>
+              <canvas class="chart" id="chart-wage"></canvas>
+            </div>
+            <div class="panel">
+              <div class="panel-header"><h2>Shirking rate</h2>
+                <span class="badge muted">fraction who slacked off</span></div>
+              <canvas class="chart" id="chart-shirk"></canvas>
+            </div>
+            <div class="panel">
+              <div class="panel-header"><h2>Unemployment rate</h2>
+                <span class="badge muted">backup job or sitting out</span></div>
+              <canvas class="chart" id="chart-unemp"></canvas>
+            </div>
+          </div>
+          <div class="right">
+            <div class="panel">
+              <div class="panel-header"><h3>This round</h3></div>
+              <div class="summary-grid" style="grid-template-columns: 1fr 1fr;">
+                <div class="summary-box big-metric"><span class="muted-text">Employed</span><strong id="m-employed">0</strong></div>
+                <div class="summary-box big-metric"><span class="muted-text">Backup</span><strong id="m-backup">0</strong></div>
+                <div class="summary-box big-metric warn"><span class="muted-text">Sitting out</span><strong id="m-sitting">0</strong></div>
+                <div class="summary-box big-metric danger"><span class="muted-text">Caught shirking</span><strong id="m-caught">0</strong></div>
+              </div>
+              <h4 style="margin-top:1rem;">Applications per firm</h4>
+              <div id="firms-list"></div>
+            </div>
+            <div class="panel">
+              <div class="panel-header"><h3>Leaderboard</h3><span class="badge muted" id="lb-count">top 10</span></div>
+              <div id="leaderboard"></div>
+            </div>
+            <div class="panel" id="reveal-panel" hidden>
+              <div class="panel-header"><h3>Hidden parameters <span class="badge warn">revealed</span></h3></div>
+              <div id="reveal-body"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <script src="shared.js?v=2"></script>
+    <script src="dashboard.js?v=2"></script>
+  </body>
+</html>
