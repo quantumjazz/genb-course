@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Session Quiz — Instructor Console</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell wide">
+    <div class="topbar">
+      <div class="brand-link">Session Quiz · Instructor</div>
+      <div class="row compact">
+        <span class="subbrand" id="admin-key-status">key: not set</span>
+        <button id="admin-key-set" class="button" type="button">Задай админ ключ</button>
+      </div>
+    </div>
+
+    <nav class="tabs">
+      <button class="tab-btn current" data-tab="sessions" type="button">Сесии</button>
+      <button class="tab-btn" data-tab="banks" type="button">Банки въпроси</button>
+    </nav>
+
+    <!-- ============ SESSIONS TAB ============ -->
+    <section id="tab-sessions">
+      <!-- Live panel (visible when an active session is selected) -->
+      <section id="live-panel" class="panel" hidden>
+        <div class="panel-header">
+          <div>
+            <h2 id="live-title">Активна сесия</h2>
+            <div class="hint" id="live-meta"></div>
+          </div>
+          <div class="row compact">
+            <button id="live-start" class="button primary" type="button">Старт</button>
+            <button id="live-close" class="button danger" type="button">Затвори</button>
+          </div>
+        </div>
+
+        <div class="join-display">
+          <div>
+            <div class="join-code-label">Код за присъединяване</div>
+            <div id="live-code" class="join-code">——————</div>
+            <div class="hint" id="live-status-line"></div>
+          </div>
+          <img id="live-qr" class="qr-img" alt="QR" />
+        </div>
+
+        <div class="grid three" style="margin-top: 1rem;">
+          <div class="summary-stat"><span class="label">Студенти</span><span class="value" id="stat-students">0</span></div>
+          <div class="summary-stat"><span class="label">Изминало</span><span class="value" id="stat-elapsed">—</span></div>
+          <div class="summary-stat"><span class="label">Оставащо</span><span class="value" id="stat-remaining">—</span></div>
+        </div>
+
+        <div style="margin-top: 1rem;">
+          <table class="table" id="live-students">
+            <thead>
+              <tr>
+                <th>Студент</th>
+                <th>Отговорени</th>
+                <th>Текущ</th>
+                <th>Смени (blur)</th>
+                <th>Статус</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p class="hint" id="live-empty" hidden>Все още няма влезли студенти.</p>
+        </div>
+      </section>
+
+      <!-- Create session form -->
+      <section class="panel">
+        <h2>Нова сесия</h2>
+        <form id="create-form" class="grid two" style="margin-top: 0.5rem;">
+          <label>
+            <span>Банка въпроси</span>
+            <select id="cf-bank" required></select>
+          </label>
+          <label>
+            <span>Тема (lecture_tag)</span>
+            <select id="cf-tag" required></select>
+          </label>
+          <label>
+            <span>Заглавие за студентите</span>
+            <input id="cf-display-name" type="text" placeholder="(по подразбиране = темата)" />
+          </label>
+          <label>
+            <span>Брой въпроси</span>
+            <input id="cf-item-count" type="number" min="5" max="100" value="30" />
+          </label>
+          <label>
+            <span>Продължителност (мин.)</span>
+            <input id="cf-duration" type="number" min="5" max="180" value="60" />
+          </label>
+          <label>
+            <span>Поведение при blur</span>
+            <select id="cf-swap">
+              <option value="soft" selected>soft — въпросът се сменя</option>
+              <option value="hard">hard — сесията приключва</option>
+            </select>
+          </label>
+          <label>
+            <span>Размесване на отговорите</span>
+            <select id="cf-permutation">
+              <option value="per_view" selected>per_view — при всяко показване</option>
+              <option value="per_student">per_student — фиксирано за студент</option>
+            </select>
+          </label>
+          <label>
+            <span>Обратна връзка</span>
+            <select id="cf-feedback">
+              <option value="immediate" selected>веднага след отговор</option>
+              <option value="end_of_session">в края на теста</option>
+            </select>
+          </label>
+          <label>
+            <span>При изчерпване на въпросите</span>
+            <select id="cf-exhaustion">
+              <option value="end_session" selected>приключва сесията</option>
+              <option value="recycle">повтаря въпроси</option>
+            </select>
+          </label>
+          <div></div>
+          <div class="actions">
+            <button class="button primary" type="submit">Създай сесия</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Past sessions -->
+      <section class="panel">
+        <h2>Сесии</h2>
+        <table class="table" id="sessions-table">
+          <thead>
+            <tr>
+              <th>Код</th>
+              <th>Тема</th>
+              <th>Статус</th>
+              <th>Студенти</th>
+              <th>Създадена</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="hint" id="sessions-empty" hidden>Няма сесии.</p>
+      </section>
+    </section>
+
+    <!-- ============ BANKS TAB ============ -->
+    <section id="tab-banks" hidden>
+      <section class="panel">
+        <h2>Качване на нова банка</h2>
+        <p class="hint">
+          .xlsx файл със лист "items" и колони
+          <code>lecture_tag, stem, option_a, option_b, option_c, option_d, option_e, option_f, correct, explanation</code>.
+        </p>
+        <form id="upload-form" class="grid two" style="margin-top: 0.6rem;">
+          <label>
+            <span>Файл (.xlsx)</span>
+            <input id="up-file" type="file" accept=".xlsx" required />
+          </label>
+          <label>
+            <span>Име на банката</span>
+            <input id="up-name" type="text" placeholder="(по избор)" />
+          </label>
+          <div></div>
+          <div class="actions">
+            <button class="button primary" type="submit">Качи</button>
+          </div>
+        </form>
+        <div id="upload-result" class="hint" style="margin-top: 0.6rem;"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Налични банки</h2>
+        <table class="table" id="banks-table">
+          <thead>
+            <tr>
+              <th>Име</th>
+              <th>Качена</th>
+              <th>Въпроси</th>
+              <th>Теми</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="hint" id="banks-empty" hidden>Все още няма качени банки.</p>
+      </section>
+    </section>
+  </main>
+
+  <script src="shared.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

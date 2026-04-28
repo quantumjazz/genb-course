@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Тест</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell narrow">
+    <div class="topbar">
+      <div class="brand-link">Тест на знанията</div>
+      <div id="session-name" class="subbrand"></div>
+    </div>
+
+    <!-- LOGIN -->
+    <section id="card-login" class="panel">
+      <h1 id="login-title">Вход в теста</h1>
+      <p id="login-rules" class="lede"></p>
+      <form id="login-form" class="grid" style="margin-top: 1rem;">
+        <label>
+          <span>Код на сесията</span>
+          <input id="login-code" name="code" autocomplete="off" inputmode="text"
+                 maxlength="6" placeholder="ABC123" required />
+        </label>
+        <label>
+          <span>Факултетен номер</span>
+          <input id="login-student-number" name="student_number"
+                 autocomplete="off" inputmode="text" required />
+        </label>
+        <div class="actions">
+          <button class="button primary" type="submit">Влез</button>
+        </div>
+      </form>
+      <p id="login-error" class="hint" style="color: var(--danger);" hidden></p>
+    </section>
+
+    <!-- LOBBY -->
+    <section id="card-lobby" class="panel" hidden>
+      <h1>Готови сте.</h1>
+      <p class="lede">Изчакваме преподавателя да стартира теста.</p>
+      <p class="hint" id="lobby-rules"></p>
+      <p class="muted-text" style="margin-top: 1rem;">Не затваряйте страницата.</p>
+    </section>
+
+    <!-- QUIZ -->
+    <section id="card-quiz" class="panel quiz-card" hidden>
+      <header class="quiz-header">
+        <span id="quiz-progress">Въпрос — от —</span>
+        <span id="quiz-timer" class="timer">—:—</span>
+      </header>
+      <p id="quiz-stem" class="quiz-stem"></p>
+      <ul id="quiz-options" class="options"></ul>
+      <div id="quiz-feedback" hidden></div>
+      <div class="actions">
+        <button id="quiz-submit" class="button primary huge" type="button" disabled>Потвърди</button>
+        <button id="quiz-next" class="button huge" type="button" hidden>Следващ въпрос</button>
+      </div>
+    </section>
+
+    <!-- END -->
+    <section id="card-end" class="panel" hidden>
+      <h1 id="end-headline">Готово.</h1>
+      <p id="end-summary" class="lede"></p>
+      <p id="end-reason-note" class="hint"></p>
+      <div class="actions">
+        <button id="end-reset" class="button" type="button">Влез в нов тест</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="shared.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
