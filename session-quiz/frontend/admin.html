@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Session Quiz — Instructor Console</title>
-  <link rel="stylesheet" href="styles.css?v=20260506.1" />
+  <link rel="stylesheet" href="styles.css?v=20260506.2" />
 </head>
 <body>
   <main class="shell wide">
@@ -15,6 +15,21 @@
         <button id="admin-key-set" class="button" type="button">Задай админ ключ</button>
       </div>
     </div>
+
+    <dialog id="admin-key-dialog" class="key-dialog">
+      <form id="admin-key-form" class="key-dialog-card">
+        <h2>Админ ключ</h2>
+        <label>
+          <span>Ключ</span>
+          <input id="admin-key-input" type="password" autocomplete="current-password" />
+        </label>
+        <div class="actions compact">
+          <button id="admin-key-cancel" class="button" type="button">Отказ</button>
+          <button id="admin-key-clear" class="button danger" type="button">Изчисти</button>
+          <button class="button primary" type="submit">Запази</button>
+        </div>
+      </form>
+    </dialog>
 
     <nav class="tabs">
       <button class="tab-btn current" data-tab="sessions" type="button">Сесии</button>
@@ -205,7 +220,7 @@
     </section>
   </main>
 
-  <script src="shared.js?v=20260506.1"></script>
-  <script src="admin.js?v=20260506.1"></script>
+  <script src="shared.js?v=20260506.2"></script>
+  <script src="admin.js?v=20260506.2"></script>
 </body>
 </html>

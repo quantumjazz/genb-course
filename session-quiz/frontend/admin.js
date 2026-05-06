@@ -17,6 +17,11 @@
   const els = {
     keyStatus: document.getElementById("admin-key-status"),
     keyBtn: document.getElementById("admin-key-set"),
+    keyDialog: document.getElementById("admin-key-dialog"),
+    keyForm: document.getElementById("admin-key-form"),
+    keyInput: document.getElementById("admin-key-input"),
+    keyCancel: document.getElementById("admin-key-cancel"),
+    keyClear: document.getElementById("admin-key-clear"),
     tabs: document.querySelectorAll(".tab-btn"),
     tabSessions: document.getElementById("tab-sessions"),
     tabBanks: document.getElementById("tab-banks"),
@@ -69,7 +74,11 @@
     activeSessionId = loadActiveSession();
     refreshKeyStatus();
 
-    els.keyBtn.addEventListener("click", promptForKey);
+    els.keyBtn.addEventListener("click", openKeyDialog);
+    els.keyForm.addEventListener("submit", onKeyDialogSubmit);
+    els.keyCancel.addEventListener("click", closeKeyDialog);
+    els.keyClear.addEventListener("click", clearKey);
+    els.keyDialog.addEventListener("close", () => { els.keyInput.value = ""; });
     els.tabs.forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
 
     els.createForm.addEventListener("submit", onCreateSession);
@@ -107,12 +116,42 @@
     } catch (_) { /* ignore */ }
   }
 
-  function promptForKey() {
-    const next = window.prompt("Админ ключ (X-Admin-Key):", adminKey || "");
-    if (next === null) return;
-    adminKey = next.trim();
+  function openKeyDialog() {
+    els.keyInput.value = adminKey;
+    if (typeof els.keyDialog.showModal === "function") {
+      els.keyDialog.showModal();
+    } else {
+      els.keyDialog.setAttribute("open", "");
+    }
+    window.setTimeout(() => {
+      els.keyInput.focus();
+      els.keyInput.select();
+    }, 0);
+  }
+
+  function closeKeyDialog() {
+    if (typeof els.keyDialog.close === "function" && els.keyDialog.open) {
+      els.keyDialog.close();
+    } else {
+      els.keyDialog.removeAttribute("open");
+      els.keyInput.value = "";
+    }
+  }
+
+  function onKeyDialogSubmit(event) {
+    event.preventDefault();
+    adminKey = els.keyInput.value.trim();
     saveKey(adminKey);
     refreshKeyStatus();
+    closeKeyDialog();
+    refreshAll();
+  }
+
+  function clearKey() {
+    adminKey = "";
+    saveKey("");
+    refreshKeyStatus();
+    closeKeyDialog();
     refreshAll();
   }
 
