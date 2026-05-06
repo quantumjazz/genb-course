@@ -35,7 +35,10 @@
 
     createForm: document.getElementById("create-form"),
     cfBank: document.getElementById("cf-bank"),
-    cfTag: document.getElementById("cf-tag"),
+    cfTags: document.getElementById("cf-tags"),
+    cfTagSummary: document.getElementById("cf-tag-summary"),
+    cfTagsAll: document.getElementById("cf-tags-all"),
+    cfTagsNone: document.getElementById("cf-tags-none"),
     cfDisplayName: document.getElementById("cf-display-name"),
     cfItemCount: document.getElementById("cf-item-count"),
     cfDuration: document.getElementById("cf-duration"),
@@ -43,6 +46,7 @@
     cfPermutation: document.getElementById("cf-permutation"),
     cfFeedback: document.getElementById("cf-feedback"),
     cfExhaustion: document.getElementById("cf-exhaustion"),
+    cfSecurity: document.getElementById("cf-security"),
 
     sessionsTable: document.getElementById("sessions-table").querySelector("tbody"),
     sessionsEmpty: document.getElementById("sessions-empty"),
@@ -68,6 +72,10 @@
 
     els.createForm.addEventListener("submit", onCreateSession);
     els.cfBank.addEventListener("change", onBankChange);
+    els.cfItemCount.addEventListener("input", updateTagSummary);
+    els.cfExhaustion.addEventListener("change", updateTagSummary);
+    els.cfTagsAll.addEventListener("click", () => setAllTags(true));
+    els.cfTagsNone.addEventListener("click", () => setAllTags(false));
     els.uploadForm.addEventListener("submit", onUpload);
 
     els.liveStart.addEventListener("click", onStartSession);
@@ -178,20 +186,84 @@
       els.cfBank.value = prev;
       onBankChange();
     } else {
-      els.cfTag.innerHTML = `<option value="">— първо избери банка —</option>`;
+      renderTagPicker(null);
     }
   }
 
   function onBankChange() {
     const id = els.cfBank.value;
     const bank = banksCache.find((b) => b.bank_id === id);
+    renderTagPicker(bank);
+  }
+
+  function renderTagPicker(bank) {
     if (!bank) {
-      els.cfTag.innerHTML = `<option value="">— първо избери банка —</option>`;
+      els.cfTags.innerHTML = "";
+      els.cfTagSummary.textContent = "Първо изберете банка.";
+      els.cfTagSummary.classList.remove("pool-warning");
       return;
     }
-    els.cfTag.innerHTML = (bank.tags || []).map(
-      (t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)} (${bank.tag_counts[t] || 0})</option>`
-    ).join("");
+    const tags = bank.tags || [];
+    els.cfTags.innerHTML = tags.map((t, idx) => `
+      <label class="tag-check">
+        <input type="checkbox" value="${escapeHtml(t)}" ${idx === 0 ? "checked" : ""} />
+        <span>
+          <strong>${escapeHtml(t)}</strong>
+          <small>${bank.tag_counts[t] || 0} въпроса</small>
+        </span>
+      </label>
+    `).join("");
+    els.cfTags.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+      input.addEventListener("change", updateTagSummary);
+    });
+    updateTagSummary();
+  }
+
+  function selectedTags() {
+    return Array.from(els.cfTags.querySelectorAll('input[type="checkbox"]:checked'))
+      .map((input) => input.value);
+  }
+
+  function setAllTags(checked) {
+    els.cfTags.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+      input.checked = checked;
+    });
+    updateTagSummary();
+  }
+
+  function currentBank() {
+    return banksCache.find((b) => b.bank_id === els.cfBank.value) || null;
+  }
+
+  function updateTagSummary() {
+    const bank = currentBank();
+    const tags = selectedTags();
+    els.cfTagSummary.classList.remove("pool-warning");
+    if (!bank) {
+      els.cfTagSummary.textContent = "Първо изберете банка.";
+      return;
+    }
+    if (!tags.length) {
+      els.cfTagSummary.textContent = "Изберете поне една тема.";
+      els.cfTagSummary.classList.add("pool-warning");
+      return;
+    }
+    const poolSize = tags.reduce((sum, tag) => sum + (bank.tag_counts[tag] || 0), 0);
+    const requested = Number(els.cfItemCount.value || 0);
+    const suffix = tags.length === 1 ? "тема" : "теми";
+    if (poolSize > 0 && requested > poolSize) {
+      els.cfTagSummary.classList.add("pool-warning");
+      if (els.cfExhaustion.value === "recycle") {
+        els.cfTagSummary.textContent =
+          `${poolSize} уникални въпроса в ${tags.length} ${suffix}; след това ще се повтарят.`;
+      } else {
+        els.cfTagSummary.textContent =
+          `${poolSize} уникални въпроса в ${tags.length} ${suffix}; заявени са ${requested}, затова тестът може да приключи по-рано.`;
+      }
+      return;
+    }
+    els.cfTagSummary.textContent =
+      `${poolSize} уникални въпроса в ${tags.length} ${suffix}.`;
   }
 
   async function onUpload(event) {
@@ -249,6 +321,13 @@
     }
   }
 
+  function sessionTagLabel(session) {
+    if (Array.isArray(session.lecture_tags) && session.lecture_tags.length) {
+      return session.lecture_tags.join(" + ");
+    }
+    return session.lecture_tag || "";
+  }
+
   function renderSessions(sessions) {
     els.sessionsEmpty.hidden = sessions.length > 0;
     els.sessionsTable.innerHTML = sessions.map((s) => {
@@ -262,7 +341,7 @@
       return `
         <tr ${isActive ? 'style="background: rgba(13,106,110,0.06);"' : ""}>
           <td><strong>${escapeHtml(s.join_code)}</strong></td>
-          <td>${escapeHtml(s.display_name)}<div class="hint">${escapeHtml(s.lecture_tag)}</div></td>
+          <td>${escapeHtml(s.display_name)}<div class="hint">${escapeHtml(sessionTagLabel(s))}</div></td>
           <td>${statusBadge}</td>
           <td>${s.students || 0}</td>
           <td>${escapeHtml(fmtDate(s.created_at))}</td>
@@ -333,19 +412,23 @@
 
   async function onCreateSession(event) {
     event.preventDefault();
+    const tags = selectedTags();
+    const tagLabel = tags.join(" + ");
     const payload = {
       bank_id: els.cfBank.value,
-      lecture_tag: els.cfTag.value,
-      display_name: els.cfDisplayName.value.trim() || els.cfTag.value,
+      lecture_tag: tags[0] || "",
+      lecture_tags: tags,
+      display_name: els.cfDisplayName.value.trim() || tagLabel,
       item_count: Number(els.cfItemCount.value),
       duration_minutes: Number(els.cfDuration.value),
       swap_policy: els.cfSwap.value,
       permutation: els.cfPermutation.value,
       feedback: els.cfFeedback.value,
       exhaustion_policy: els.cfExhaustion.value,
+      security_mode: els.cfSecurity.value,
     };
-    if (!payload.bank_id || !payload.lecture_tag) {
-      toast("Изберете банка и тема.", "error");
+    if (!payload.bank_id || tags.length === 0) {
+      toast("Изберете банка и поне една тема.", "error");
       return;
     }
     try {
@@ -428,8 +511,8 @@
     const s = data.session;
     els.liveTitle.textContent = `Сесия "${s.display_name}"`;
     els.liveMeta.textContent =
-      `${s.lecture_tag} · ${s.item_count} въпроса · ${s.duration_minutes} мин · `
-      + `swap=${s.swap_policy} · feedback=${s.feedback}`;
+      `${sessionTagLabel(s)} · ${s.item_count} въпроса · ${s.duration_minutes} мин · `
+      + `swap=${s.swap_policy} · feedback=${s.feedback} · security=${s.security_mode || "standard"}`;
     els.liveCode.textContent = s.join_code;
 
     // QR (admin endpoint requires admin key, so we set src after a fresh fetch).
@@ -463,6 +546,7 @@
           <td>${st.answered}</td>
           <td>${st.current_ord || "—"}</td>
           <td>${st.swapped}</td>
+          <td>${st.incidents || 0}</td>
           <td>${statusCell}</td>
         </tr>`;
     }).join("");

@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS quiz_session (
   permutation       TEXT NOT NULL,
   feedback          TEXT NOT NULL,
   exhaustion_policy TEXT NOT NULL,
+  security_mode     TEXT NOT NULL DEFAULT 'standard',
   pseudonym_key     BLOB NOT NULL,
   created_at        INTEGER NOT NULL,
   started_at        INTEGER,
@@ -76,6 +77,22 @@ CREATE TABLE IF NOT EXISTS quiz_attempt (
 
 CREATE INDEX IF NOT EXISTS idx_attempt_session_student
   ON quiz_attempt (session_id, student_token);
+
+CREATE TABLE IF NOT EXISTS quiz_incident (
+  id             TEXT PRIMARY KEY,
+  session_id     TEXT NOT NULL,
+  student_token  TEXT NOT NULL,
+  attempt_id     TEXT,
+  event_type     TEXT NOT NULL,
+  client_ts      INTEGER,
+  server_ts      INTEGER NOT NULL,
+  metadata_json  TEXT NOT NULL,
+  FOREIGN KEY (session_id, student_token)
+    REFERENCES quiz_student(session_id, student_token) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_incident_session_student
+  ON quiz_incident (session_id, student_token);
 """
 
 
@@ -91,3 +108,16 @@ def connect(db_path):
 def init_schema(conn):
     with conn:
         conn.executescript(SCHEMA)
+        _ensure_column(
+            conn,
+            "quiz_session",
+            "security_mode",
+            "TEXT NOT NULL DEFAULT 'standard'",
+        )
+
+
+def _ensure_column(conn, table, column, definition):
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    if any(row["name"] == column for row in rows):
+        return
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")

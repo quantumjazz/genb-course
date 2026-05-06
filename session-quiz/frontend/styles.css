@@ -121,6 +121,7 @@ textarea { min-height: 5rem; resize: vertical; }
 .button.primary:hover:not(:disabled) { background: #0b5a5d; }
 .button.danger { background: rgba(139, 46, 37, 0.13); color: var(--danger); }
 .button.warn { background: rgba(157, 92, 0, 0.14); color: var(--warn); }
+.button.small { padding: 0.45rem 0.7rem; font-size: 0.85rem; }
 .button.huge {
   padding: 1.2rem 1.4rem;
   font-size: 1.15rem;
@@ -173,6 +174,47 @@ textarea { min-height: 5rem; resize: vertical; }
   cursor: pointer;
 }
 .tab-btn.current { background: var(--accent); color: white; border-color: transparent; }
+
+.tag-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+.tag-field legend {
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.tag-actions { gap: 0.35rem; }
+.tag-picker {
+  display: grid;
+  gap: 0.45rem;
+  max-height: 12rem;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+.tag-check {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(31, 42, 46, 0.14);
+  border-radius: 14px;
+  background: #fffdf9;
+}
+.tag-check input { width: auto; }
+.tag-check strong { font-size: 0.94rem; }
+.tag-check small {
+  display: block;
+  margin-top: 0.08rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.pool-warning { color: var(--warn); font-weight: 700; }
 
 /* ---------- Quiz card (student) ---------- */
 

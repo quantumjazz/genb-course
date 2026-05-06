@@ -46,18 +46,23 @@ Set at session creation, stored in `quiz_session`.
 | Option | Type | Default | Range / Values |
 |---|---|---|---|
 | `bank_id` | select | required | any uploaded bank |
-| `lecture_tag` | select | required | tags present in the chosen bank |
-| `display_name` | string | = lecture_tag | shown to students at login |
+| `lecture_tags` | multi-select | required | one or more tags present in the chosen bank |
+| `display_name` | string | = selected tags | shown to students at login |
 | `item_count` | int | 30 | 5–100 |
 | `duration_minutes` | int | 60 | 5–180 |
 | `swap_policy` | enum | `soft` | `soft` (blur swaps item, no penalty) / `hard` (blur ends session) |
 | `permutation` | enum | `per_view` | `per_view` / `per_student` |
 | `feedback` | enum | `immediate` | `immediate` / `end_of_session` |
 | `exhaustion_policy` | enum | `end_session` | `end_session` / `recycle` |
+| `security_mode` | enum | `standard` | `standard` / `strict` |
 
 The student login card renders a plain-Bulgarian rules statement derived
 from these settings (e.g. "30 въпроса, 60 минути. Напускането на страницата
 сменя въпроса.").
+
+The instructor console shows the number of unique questions in the selected
+tag pool and warns when `item_count` exceeds that pool under
+`exhaustion_policy=end_session`.
 
 ---
 
@@ -65,11 +70,16 @@ from these settings (e.g. "30 въпроса, 60 минути. Напускан�
 
 Two core rules. Everything else is out of scope.
 
-**5.1 Blur swap.** Client binds `visibilitychange` (→`hidden`) and window
-`blur` → POST `/quiz/blur` with current `attempt_id`. Server marks the
-current attempt `swapped=1`, does **not** count it toward `item_count`, and
-serves a fresh item on the next `/quiz/next` call. If `swap_policy=hard`,
-the server instead ends the student's session with `end_reason='blur_hard'`.
+**5.1 Blur swap.** Client binds `visibilitychange` (→`hidden`), window
+`blur`, and `pagehide` → `/quiz/blur` with current `attempt_id`. It records
+a local lost-focus marker, uses `navigator.sendBeacon()` where possible,
+and forces a server refresh when focus returns before allowing another
+answer. Server marks the current attempt `swapped=1`, does **not** count it
+toward `item_count`, and serves a fresh item on the next `/quiz/next` call.
+If `swap_policy=hard`, the server instead ends the student's session with
+`end_reason='blur_hard'`.
+In soft mode the swapped item still counts as seen for that student, so the
+student cannot repeatedly leave and re-enter to shop for a preferred item.
 
 **5.2 Per-view option permutation.** Every time an item is served
 (including re-serves after a blur swap), options are shuffled with a fresh
@@ -79,6 +89,11 @@ grading time.
 
 Also: `copy`, `cut`, `contextmenu` on the item card → `preventDefault()`.
 Friction only; not relied on.
+
+**5.3 Strict security mode.** If `security_mode=strict`, the client requires
+Fullscreen API entry before serving a live question. Fullscreen exit,
+visibility/blur/pagehide, and suspicious resize events are logged to
+`quiz_incident` and the current attempt is invalidated through `/quiz/blur`.
 
 **Explicitly not in v1:** keystroke telemetry, watermarks, duplicate-answer
 detection, proctoring, webcam.
@@ -109,7 +124,7 @@ CREATE TABLE quiz_session (
   id TEXT PRIMARY KEY,
   join_code TEXT UNIQUE,
   bank_id TEXT,
-  lecture_tag TEXT,
+  lecture_tag TEXT,        -- legacy single tag or JSON list for multi-tag sessions
   display_name TEXT,
   item_count INTEGER,
   duration_minutes INTEGER,
@@ -117,6 +132,7 @@ CREATE TABLE quiz_session (
   permutation TEXT,
   feedback TEXT,
   exhaustion_policy TEXT,
+  security_mode TEXT DEFAULT 'standard',
   created_at INTEGER,
   started_at INTEGER,
   closed_at INTEGER,
@@ -146,6 +162,17 @@ CREATE TABLE quiz_attempt (
   submitted_at INTEGER,
   swapped INTEGER DEFAULT 0
 );
+
+CREATE TABLE quiz_incident (
+  id TEXT PRIMARY KEY,
+  session_id TEXT,
+  student_token TEXT,
+  attempt_id TEXT,
+  event_type TEXT,
+  client_ts INTEGER,
+  server_ts INTEGER,
+  metadata_json TEXT
+);
 ```
 
 Derived counts (`blur_count`, `items_correct`, `score_pct`) are computed at
@@ -171,11 +198,17 @@ GET  /quiz/next?student_token=…
 
 POST /quiz/answer
    {attempt_id, chosen_visible_index}
-   → {correct, explanation?}     # explanation only if feedback=immediate
+   → {correct, explanation?, correct_visible_index?}
+   | {session_ended:true, reason, score:{answered, correct}}
+     # explanation/correct_visible_index only if feedback=immediate
 
 POST /quiz/blur
    {attempt_id}
    → {swapped:true} | {session_ended:true, reason:'blur_hard'}
+
+POST /quiz/incident
+   {student_token, attempt_id?, event_type, client_ts?, metadata?}
+   → {ok:true}
 ```
 
 **Instructor (HMAC):**
@@ -188,9 +221,9 @@ GET  /quiz/admin/bank/list
    → [{bank_id, name, uploaded_at, item_count, tags}]
 
 POST /quiz/admin/session/create
-   {bank_id, lecture_tag, display_name, item_count, duration_minutes,
-    swap_policy, permutation, feedback, exhaustion_policy}
-   → {session_id, join_code, qr_png_url}
+   {bank_id, lecture_tags:[...], display_name, item_count, duration_minutes,
+    swap_policy, permutation, feedback, exhaustion_policy, security_mode}
+   → {session_id, join_code, qr_png_url, lecture_tags, available_item_count}
 
 POST /quiz/admin/session/start          {session_id} → {started_at}
 POST /quiz/admin/session/close          {session_id} → {closed_at}
@@ -239,13 +272,13 @@ reproducibility.
 
 ## 9. Excel export
 
-`.xlsx` with two sheets.
+`.xlsx` with three sheets.
 
 **Sheet `summary`** — one row per student:
 
 ```
 student_number, joined_at, ended_at, end_reason,
-items_answered, items_correct, score_pct, blur_count
+items_answered, items_correct, score_pct, blur_count, incident_count
 ```
 
 **Sheet `detail`** — one row per attempt (including swapped):
@@ -254,6 +287,12 @@ items_answered, items_correct, score_pct, blur_count
 student_number, ord, bank_item_id, lecture_tag, stem,
 chosen_option_text, correct_option_text, correct, swapped,
 served_at, submitted_at, response_ms
+```
+
+**Sheet `incidents`** — one row per trust event:
+
+```
+student_number, event_type, attempt_id, client_ts, server_ts, metadata_json
 ```
 
 Timestamps formatted as Excel-native datetime, not epoch. `score_pct` as a
@@ -271,6 +310,8 @@ Cards (only one visible at a time):
 - **Login** — session display_name, student_number input, rules text,
   *Join* button.
 - **Lobby** — "Ready — waiting for instructor." Poll every 3s.
+- **Fullscreen** — visible only for `security_mode=strict`; requires a
+  user click to enter fullscreen before fetching the next live question.
 - **Quiz** — header (`Въпрос X от N` + mm:ss remaining), stem, options as
   large tap targets (radio semantics, single select), *Submit* button
   disabled until selection. After submit with `feedback=immediate`: a
@@ -280,9 +321,12 @@ Cards (only one visible at a time):
 
 Client event bindings on the quiz card:
 
-- `document.visibilitychange` when `document.hidden === true` → POST
-  `/quiz/blur`.
-- `window.blur` → POST `/quiz/blur`.
+- `document.visibilitychange` when `document.hidden === true`,
+  `window.blur`, and `pagehide` → `/quiz/blur`.
+- On return/focus, a local lost-focus marker forces `/quiz/blur` resolution
+  and `/quiz/next` before any answer can be submitted.
+- In strict mode, `fullscreenchange` and suspicious resize events are also
+  trust violations.
 - `copy`, `cut`, `contextmenu` → `preventDefault()`.
 
 No offline state. Reload re-fetches from server and continues from the
@@ -302,7 +346,8 @@ Single page, desktop-first, HMAC-gated. Two tabs.
   before commit; show any row warnings.
 
 **Sessions tab**
-- *Create session* form — all §4 options with defaults pre-filled.
+- *Create session* form — all §4 options with defaults pre-filled,
+  including multi-tag selection and selected-pool size/warnings.
   *Create* → big join code + QR for projection.
 - *Live* panel (visible when a session is `live`) — table of joined
   students with answered count, current ord, swap count, ended? Poll

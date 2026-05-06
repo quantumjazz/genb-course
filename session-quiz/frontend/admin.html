@@ -59,6 +59,7 @@
                 <th>Отговорени</th>
                 <th>Текущ</th>
                 <th>Смени (blur)</th>
+                <th>Инциденти</th>
                 <th>Статус</th>
               </tr>
             </thead>
@@ -76,10 +77,15 @@
             <span>Банка въпроси</span>
             <select id="cf-bank" required></select>
           </label>
-          <label>
-            <span>Тема (lecture_tag)</span>
-            <select id="cf-tag" required></select>
-          </label>
+          <fieldset class="tag-field">
+            <legend>Теми (lecture_tag)</legend>
+            <div class="row compact tag-actions">
+              <button id="cf-tags-all" class="button small" type="button">Всички</button>
+              <button id="cf-tags-none" class="button small" type="button">Нито една</button>
+            </div>
+            <div id="cf-tags" class="tag-picker"></div>
+            <p id="cf-tag-summary" class="hint">Първо изберете банка.</p>
+          </fieldset>
           <label>
             <span>Заглавие за студентите</span>
             <input id="cf-display-name" type="text" placeholder="(по подразбиране = темата)" />
@@ -119,6 +125,14 @@
               <option value="end_session" selected>приключва сесията</option>
               <option value="recycle">повтаря въпроси</option>
             </select>
+          </label>
+          <label>
+            <span>Режим на сигурност</span>
+            <select id="cf-security">
+              <option value="standard" selected>standard — без цял екран</option>
+              <option value="strict">strict — изисква цял екран</option>
+            </select>
+            <span class="hint">Strict блокира устройства без поддръжка на fullscreen.</span>
           </label>
           <div></div>
           <div class="actions">

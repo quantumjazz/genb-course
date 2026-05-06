@@ -1,13 +1,17 @@
 (function () {
-  const { publicApi, escapeHtml, toast, fmtTimer } = window.QuizShared;
+  const { publicApi, escapeHtml, toast, fmtTimer, API_BASE } = window.QuizShared;
 
   const STORAGE_KEY = "session-quiz-student-v1";
   const FEEDBACK_KEY = "session-quiz-last-feedback-v1";
+  const LOST_FOCUS_KEY = "session-quiz-lost-focus-v1";
+  const STRICT_RESIZE_RATIO = 0.85;
+  const STRICT_RESIZE_DEBOUNCE_MS = 750;
 
   const cards = {
     login: document.getElementById("card-login"),
     lobby: document.getElementById("card-lobby"),
     quiz: document.getElementById("card-quiz"),
+    fullscreen: document.getElementById("card-fullscreen"),
     end: document.getElementById("card-end"),
   };
 
@@ -27,6 +31,9 @@
     quizFeedback: document.getElementById("quiz-feedback"),
     quizSubmit: document.getElementById("quiz-submit"),
     quizNext: document.getElementById("quiz-next"),
+    fullscreenEnter: document.getElementById("fullscreen-enter"),
+    fullscreenMessage: document.getElementById("fullscreen-message"),
+    fullscreenError: document.getElementById("fullscreen-error"),
     endHeadline: document.getElementById("end-headline"),
     endSummary: document.getElementById("end-summary"),
     endReasonNote: document.getElementById("end-reason-note"),
@@ -40,6 +47,7 @@
     displayName: null,
     feedback: "immediate",
     swapPolicy: "soft",
+    securityMode: "standard",
     itemCount: 0,
   };
 
@@ -48,6 +56,9 @@
   let timerInterval = null;
   let blurSent = false; // prevent double-fire per attempt
   let inFlight = null;  // current async to avoid double-actions
+  let focusRefreshInFlight = null;
+  let resizeTimer = null;
+  let fullscreenEverEntered = false;
   let hardEnded = false;
 
   // --- Storage --------------------------------------------------------------
@@ -70,37 +81,45 @@
   function clearState() {
     try { window.localStorage.removeItem(STORAGE_KEY); } catch (_) {}
     clearFeedbackState();
+    clearLostFocusState();
     state = { token: null, sessionId: null, joinCode: null, displayName: null,
-              feedback: "immediate", swapPolicy: "soft", itemCount: 0 };
-  }
-
-  function saveFeedbackState(visibleIndex, result) {
-    if (!currentAttempt) return;
-    try {
-      window.localStorage.setItem(FEEDBACK_KEY, JSON.stringify({
-        attemptId: currentAttempt.id,
-        ord: currentAttempt.ord,
-        itemCount: currentAttempt.itemCount,
-        stem: currentAttempt.stem,
-        options: currentAttempt.options,
-        deadlineMs: currentAttempt.deadline_ms,
-        chosenIndex: visibleIndex,
-        correct: !!result.correct,
-        explanation: result.explanation || "",
-        correctOptionText: result.correct_option_text || "",
-      }));
-    } catch (_) { /* ignore */ }
-  }
-
-  function loadFeedbackState() {
-    try {
-      const raw = window.localStorage.getItem(FEEDBACK_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch (_) { return null; }
+              feedback: "immediate", swapPolicy: "soft",
+              securityMode: "standard", itemCount: 0 };
   }
 
   function clearFeedbackState() {
     try { window.localStorage.removeItem(FEEDBACK_KEY); } catch (_) {}
+  }
+
+  function saveLostFocusState(attemptId) {
+    if (!attemptId || !state.token) return;
+    try {
+      window.localStorage.setItem(LOST_FOCUS_KEY, JSON.stringify({
+        attemptId,
+        token: state.token,
+        at: Date.now(),
+      }));
+    } catch (_) { /* ignore */ }
+  }
+
+  function loadLostFocusState() {
+    try {
+      const raw = window.localStorage.getItem(LOST_FOCUS_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function clearLostFocusState(attemptId) {
+    const marker = loadLostFocusState();
+    if (attemptId && marker && marker.attemptId !== attemptId) return;
+    try { window.localStorage.removeItem(LOST_FOCUS_KEY); } catch (_) {}
+  }
+
+  function hasLostFocusForAttempt(attemptId) {
+    const marker = loadLostFocusState();
+    return !!(marker && marker.token === state.token && marker.attemptId === attemptId);
   }
 
   // --- Card switching -------------------------------------------------------
@@ -140,6 +159,7 @@
     }
 
     els.loginForm.addEventListener("submit", onLoginSubmit);
+    els.fullscreenEnter.addEventListener("click", onEnterFullscreen);
     els.quizSubmit.addEventListener("click", onSubmitAnswer);
     els.quizNext.addEventListener("click", () => {
       // The cached feedback is now consumed; clear it before advancing
@@ -159,9 +179,17 @@
 
     // Anti-cheat: blur swap.
     document.addEventListener("visibilitychange", () => {
-      if (document.hidden) onBlur();
+      if (document.hidden) onFocusLost("visibility_hidden", { hidden: true });
+      else onFocusReturn();
     });
-    window.addEventListener("blur", onBlur);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+    document.addEventListener("mozfullscreenchange", onFullscreenChange);
+    document.addEventListener("MSFullscreenChange", onFullscreenChange);
+    window.addEventListener("blur", () => onFocusLost("window_blur"));
+    window.addEventListener("focus", onFocusReturn);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("resize", onResize);
 
     // Friction handlers.
     cards.quiz.addEventListener("copy", (e) => e.preventDefault());
@@ -170,9 +198,15 @@
   }
 
   async function resumeSession() {
+    // Always ask the server for the next authoritative state on re-entry.
+    // Replaying cached feedback here can make a completed question look like
+    // the current question has its correct answer pre-marked.
+    clearFeedbackState();
     const status = await publicApi(
       `/quiz/live_status?student_token=${encodeURIComponent(state.token)}`
     );
+    state.securityMode = status.security_mode || state.securityMode || "standard";
+    saveState();
     if (status.ended) {
       showEnd({ reason: status.end_reason, score: null });
       return;
@@ -184,10 +218,10 @@
       return;
     }
     if (status.status === "live") {
-      show("quiz");
-      const cached = loadFeedbackState();
-      if (cached) {
-        renderCachedFeedback(cached);
+      const ended = await resolveLostFocusBeforeNext();
+      if (ended === true) return;
+      if (ended === null) {
+        toast("Въпросът ще се смени, когато връзката се възстанови.", "error");
         return;
       }
       fetchNext();
@@ -220,14 +254,15 @@
         displayName: result.display_name,
         feedback: result.feedback,
         swapPolicy: result.swap_policy,
+        securityMode: result.security_mode || "standard",
         itemCount: result.item_count,
         rulesText: result.rules_text,
       };
+      clearLostFocusState();
       saveState();
       els.sessionName.textContent = result.display_name || "";
       els.lobbyRules.textContent = result.rules_text || "";
       if (result.status === "live") {
-        show("quiz");
         fetchNext();
       } else if (result.status === "closed") {
         showEnd({ reason: "instructor_closed", score: null });
@@ -253,7 +288,8 @@
         if (s.ended) {
           showEnd({ reason: s.end_reason, score: null });
         } else if (s.status === "live") {
-          show("quiz");
+          state.securityMode = s.security_mode || state.securityMode || "standard";
+          saveState();
           fetchNext();
         } else if (s.status === "closed") {
           showEnd({ reason: "instructor_closed", score: null });
@@ -271,8 +307,96 @@
 
   // --- Quiz: fetch next, render, submit, blur ------------------------------
 
+  function isStrictMode() {
+    return state.securityMode === "strict";
+  }
+
+  function fullscreenElement() {
+    return document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement ||
+      null;
+  }
+
+  function isFullscreenActive() {
+    return !!fullscreenElement();
+  }
+
+  function requestFullscreenTarget() {
+    const target = document.documentElement;
+    return target.requestFullscreen ||
+      target.webkitRequestFullscreen ||
+      target.mozRequestFullScreen ||
+      target.msRequestFullscreen ||
+      null;
+  }
+
+  function fullscreenSupported() {
+    const enabledFlags = [
+      document.fullscreenEnabled,
+      document.webkitFullscreenEnabled,
+      document.mozFullScreenEnabled,
+      document.msFullscreenEnabled,
+    ].filter((value) => typeof value === "boolean");
+    if (enabledFlags.length && !enabledFlags.some(Boolean)) return false;
+    return !!requestFullscreenTarget();
+  }
+
+  function showFullscreenGate(reason) {
+    els.fullscreenError.hidden = true;
+    els.fullscreenError.textContent = "";
+    if (!fullscreenSupported()) {
+      els.fullscreenEnter.disabled = true;
+      els.fullscreenError.textContent =
+        "Това устройство или браузър не поддържа режим на цял екран. Свържете се с преподавателя.";
+      els.fullscreenError.hidden = false;
+    } else {
+      els.fullscreenEnter.disabled = false;
+    }
+    els.fullscreenMessage.textContent = reason ||
+      "Напускането на цял екран или промяна на прозореца сменя текущия въпрос.";
+    show("fullscreen");
+  }
+
+  async function onEnterFullscreen() {
+    els.fullscreenError.hidden = true;
+    if (!fullscreenSupported()) {
+      showFullscreenGate();
+      return;
+    }
+    try {
+      const request = requestFullscreenTarget();
+      await request.call(document.documentElement);
+      fullscreenEverEntered = true;
+      fetchNext();
+    } catch (_) {
+      els.fullscreenError.textContent =
+        "Неуспешно влизане в цял екран. Разрешете fullscreen, за да започнете теста.";
+      els.fullscreenError.hidden = false;
+    }
+  }
+
+  function requireFullscreenBeforeQuestion() {
+    if (!isStrictMode()) return false;
+    if (isFullscreenActive()) {
+      fullscreenEverEntered = true;
+      return false;
+    }
+    showFullscreenGate();
+    return true;
+  }
+
   async function fetchNext() {
     if (hardEnded) return;
+    const marker = loadLostFocusState();
+    if (marker && marker.token === state.token) {
+      if (document.hidden) return;
+      const ended = await resolveLostFocusBeforeNext();
+      if (ended === true || ended === null) return;
+      currentAttempt = null;
+    }
+    if (requireFullscreenBeforeQuestion()) return;
     if (inFlight) return;
     inFlight = (async () => {
       try {
@@ -287,6 +411,10 @@
         if (data.session_ended) {
           showEnd(data);
           return;
+        }
+        if (data.security_mode) {
+          state.securityMode = data.security_mode;
+          saveState();
         }
         renderAttempt(data);
       } catch (err) {
@@ -342,6 +470,12 @@
 
   async function onSubmitAnswer() {
     if (!currentAttempt) return;
+    if (hasLostFocusForAttempt(currentAttempt.id)) {
+      els.quizSubmit.disabled = true;
+      toast("Въпросът се сменя след напускане на страницата.", "error");
+      forceRefreshAfterFocusLoss();
+      return;
+    }
     const selected = els.quizOptions.querySelector(".option.selected");
     if (!selected) return;
     const visibleIndex = Number(selected.dataset.idx);
@@ -352,6 +486,10 @@
         body: { attempt_id: currentAttempt.id,
                 chosen_visible_index: visibleIndex },
       });
+      if (result.session_ended) {
+        showEnd(result);
+        return;
+      }
       lockOptions();
       if (state.feedback === "immediate") {
         renderImmediateFeedback(result, visibleIndex);
@@ -376,13 +514,21 @@
   function renderImmediateFeedback(result, visibleIndex) {
     const selected = els.quizOptions.querySelector(`.option[data-idx="${visibleIndex}"]`);
     if (selected) selected.classList.add(result.correct ? "correct" : "wrong");
-    if (!result.correct && result.correct_option_text) {
-      // Highlight the correct option too.
-      els.quizOptions.querySelectorAll(".option").forEach((l) => {
-        if (l.querySelector("span").textContent === result.correct_option_text) {
-          l.classList.add("correct");
-        }
-      });
+    if (!result.correct) {
+      const correctIndex = Number(result.correct_visible_index);
+      const correctOption = Number.isInteger(correctIndex)
+        ? els.quizOptions.querySelector(`.option[data-idx="${correctIndex}"]`)
+        : null;
+      if (correctOption) {
+        correctOption.classList.add("correct");
+      } else if (result.correct_option_text) {
+        // Backward-compatible fallback for older backend responses.
+        els.quizOptions.querySelectorAll(".option").forEach((l) => {
+          if (l.querySelector("span").textContent === result.correct_option_text) {
+            l.classList.add("correct");
+          }
+        });
+      }
     }
     els.quizFeedback.innerHTML = `
       <div class="feedback-chip ${result.correct ? "correct" : "wrong"}">
@@ -395,58 +541,6 @@
     els.quizSubmit.hidden = true;
     els.quizNext.hidden = false;
     els.quizNext.focus();
-    // Persist for reload-recovery: a refresh between submit and Next
-    // would otherwise skip past the explanation entirely.
-    saveFeedbackState(visibleIndex, result);
-  }
-
-  function renderCachedFeedback(cached) {
-    currentAttempt = {
-      id: cached.attemptId,
-      stem: cached.stem,
-      options: cached.options,
-      ord: cached.ord,
-      itemCount: cached.itemCount,
-      deadline_ms: cached.deadlineMs,
-      remaining_ms: Math.max(0, cached.deadlineMs - Date.now()),
-    };
-    show("quiz");
-    els.quizProgress.textContent =
-      `Въпрос ${cached.ord || "—"} от ${cached.itemCount || state.itemCount || "—"}`;
-    els.quizStem.textContent = cached.stem || "";
-    els.quizOptions.innerHTML = cached.options.map((opt, idx) => `
-      <li>
-        <label class="option" data-idx="${idx}">
-          <input type="radio" name="opt" value="${idx}" disabled />
-          <span>${escapeHtml(opt)}</span>
-        </label>
-      </li>
-    `).join("");
-    const chosen = els.quizOptions.querySelector(`.option[data-idx="${cached.chosenIndex}"]`);
-    if (chosen) {
-      chosen.classList.add("selected", cached.correct ? "correct" : "wrong");
-      const input = chosen.querySelector("input");
-      if (input) input.checked = true;
-    }
-    if (!cached.correct && cached.correctOptionText) {
-      els.quizOptions.querySelectorAll(".option").forEach((l) => {
-        if (l.querySelector("span").textContent === cached.correctOptionText) {
-          l.classList.add("correct");
-        }
-      });
-    }
-    lockOptions();
-    els.quizFeedback.innerHTML = `
-      <div class="feedback-chip ${cached.correct ? "correct" : "wrong"}">
-        ${cached.correct ? "✓ Верен отговор." : "✗ Грешен отговор."}
-        ${cached.explanation
-          ? `<span class="explanation">${escapeHtml(cached.explanation)}</span>`
-          : ""}
-      </div>`;
-    els.quizFeedback.hidden = false;
-    els.quizSubmit.hidden = true;
-    els.quizNext.hidden = false;
-    startTimer();
   }
 
   // --- Timer ----------------------------------------------------------------
@@ -475,34 +569,235 @@
 
   // --- Blur swap ------------------------------------------------------------
 
-  async function onBlur() {
-    if (!currentAttempt) return;
-    if (cards.quiz.hidden) return;
-    if (blurSent) return;
-    if (!els.quizSubmit.hidden && els.quizSubmit.disabled === false) {
-      // active question with selection but not submitted — still swap
-    }
-    if (els.quizSubmit.hidden) {
-      // already answered, awaiting Next; no need to blur-swap
-      return;
-    }
-    blurSent = true;
+  function apiUrl(path) {
+    return `${String(API_BASE || "").replace(/\/$/, "")}${path}`;
+  }
+
+  function incidentMetadata(extra = {}) {
+    return {
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+      screenWidth: window.screen ? window.screen.width : null,
+      screenHeight: window.screen ? window.screen.height : null,
+      hidden: document.hidden,
+      fullscreen: isFullscreenActive(),
+      userAgent: navigator.userAgent,
+      ...extra,
+    };
+  }
+
+  function incidentPayload(eventType, attemptId, metadata = {}) {
+    return {
+      student_token: state.token,
+      attempt_id: attemptId || null,
+      event_type: eventType,
+      client_ts: Date.now(),
+      metadata: incidentMetadata(metadata),
+    };
+  }
+
+  function sendIncidentBeacon(eventType, attemptId, metadata = {}) {
+    if (!isStrictMode() || !state.token || !navigator.sendBeacon) return false;
     try {
-      const result = await publicApi("/quiz/blur", {
-        method: "POST",
-        body: { attempt_id: currentAttempt.id },
-      });
-      if (result.session_ended) {
-        hardEnded = true;
-        showEnd({ reason: result.reason, score: null });
+      const body = JSON.stringify(incidentPayload(eventType, attemptId, metadata));
+      const blob = new Blob([body], { type: "application/json" });
+      return navigator.sendBeacon(apiUrl("/quiz/incident"), blob);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function logIncident(eventType, attemptId, metadata = {}) {
+    if (!isStrictMode() || !state.token) return;
+    fetch(apiUrl("/quiz/incident"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(incidentPayload(eventType, attemptId, metadata)),
+      keepalive: true,
+    }).catch(() => { /* incident logging should not block the quiz flow */ });
+  }
+
+  function shouldLogTrustEvent() {
+    return !!(
+      isStrictMode() &&
+      state.token &&
+      !hardEnded &&
+      cards.login.hidden &&
+      cards.lobby.hidden &&
+      cards.end.hidden
+    );
+  }
+
+  function logTrustEvent(eventType, attemptId, metadata = {}, preferBeacon = false) {
+    if (!shouldLogTrustEvent()) return;
+    if (preferBeacon && sendIncidentBeacon(eventType, attemptId, metadata)) return;
+    logIncident(eventType, attemptId, metadata);
+  }
+
+  function canInvalidateCurrentAttempt() {
+    return !!(
+      currentAttempt &&
+      !cards.quiz.hidden &&
+      !els.quizSubmit.hidden
+    );
+  }
+
+  function sendBlurBeacon(attemptId) {
+    if (!navigator.sendBeacon) return false;
+    try {
+      const body = JSON.stringify({ attempt_id: attemptId });
+      const blob = new Blob([body], { type: "application/json" });
+      return navigator.sendBeacon(apiUrl("/quiz/blur"), blob);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function postBlur(attemptId) {
+    const response = await fetch(apiUrl("/quiz/blur"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attempt_id: attemptId }),
+      keepalive: true,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || `Request failed with status ${response.status}`);
+    }
+    return payload;
+  }
+
+  function handleBlurResult(result, attemptId) {
+    clearLostFocusState(attemptId);
+    if (result.session_ended) {
+      hardEnded = true;
+      showEnd({ reason: result.reason, score: null });
+      return true;
+    }
+    return false;
+  }
+
+  async function resolveLostFocusBeforeNext() {
+    const marker = loadLostFocusState();
+    if (!marker || marker.token !== state.token) return false;
+    try {
+      const result = await postBlur(marker.attemptId);
+      return handleBlurResult(result, marker.attemptId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function forceRefreshAfterFocusLoss() {
+    if (focusRefreshInFlight) return focusRefreshInFlight;
+    focusRefreshInFlight = (async () => {
+      const ended = await resolveLostFocusBeforeNext();
+      if (ended === null) {
+        toast("Въпросът ще се смени, когато връзката се възстанови.", "error");
         return;
       }
-      // Soft swap: server already invalidated this attempt; refetch.
-      currentAttempt = null;
+      if (!ended && !hardEnded) {
+        currentAttempt = null;
+        await fetchNext();
+      }
+    })();
+    focusRefreshInFlight.finally(() => {
+      focusRefreshInFlight = null;
+    });
+    return focusRefreshInFlight;
+  }
+
+  function onFocusLost(eventType = "window_blur", metadata = {}) {
+    const attemptId = currentAttempt ? currentAttempt.id : null;
+    if (!canInvalidateCurrentAttempt()) {
+      logTrustEvent(eventType, attemptId, metadata, document.hidden);
+      return;
+    }
+    if (blurSent) return;
+    saveLostFocusState(attemptId);
+    logTrustEvent(eventType, attemptId, metadata, document.hidden);
+    blurSent = true;
+
+    if (document.hidden && sendBlurBeacon(attemptId)) {
+      return;
+    }
+
+    postBlur(attemptId)
+      .then((result) => {
+        if (handleBlurResult(result, attemptId)) return;
+        currentAttempt = null;
+        if (document.hidden) return;
+        fetchNext();
+      })
+      .catch(() => {
+        // Keep the local lost-focus marker. Submission is blocked until the
+        // client can resolve it on focus or before the next answer.
+        blurSent = false;
+      });
+  }
+
+  function onFocusReturn() {
+    const marker = loadLostFocusState();
+    if (marker && marker.token === state.token) {
+      forceRefreshAfterFocusLoss();
+      return;
+    }
+    if (
+      isStrictMode() && !isFullscreenActive() && state.token && !hardEnded &&
+      cards.login.hidden && cards.lobby.hidden && cards.end.hidden
+    ) {
+      showFullscreenGate();
+      return;
+    }
+    if (!cards.quiz.hidden && !currentAttempt && state.token && !hardEnded) {
       fetchNext();
-    } catch (_) {
-      // Network may be flaky on tab switch; retry on next interaction.
-      blurSent = false;
+    }
+  }
+
+  function onPageHide() {
+    const attemptId = currentAttempt ? currentAttempt.id : null;
+    logTrustEvent("pagehide", attemptId, {}, true);
+    if (!canInvalidateCurrentAttempt()) return;
+    saveLostFocusState(attemptId);
+    sendBlurBeacon(attemptId);
+  }
+
+  function onFullscreenChange() {
+    if (!isStrictMode()) return;
+    if (isFullscreenActive()) {
+      fullscreenEverEntered = true;
+      return;
+    }
+    if (!fullscreenEverEntered && !currentAttempt) return;
+    if (canInvalidateCurrentAttempt()) {
+      onFocusLost("fullscreen_exit");
+    } else {
+      logIncident("fullscreen_exit", currentAttempt ? currentAttempt.id : null);
+    }
+    showFullscreenGate("Върнете се в режим на цял екран, за да продължите.");
+  }
+
+  function onResize() {
+    if (!isStrictMode() || !fullscreenEverEntered || hardEnded) return;
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(checkSuspiciousResize, STRICT_RESIZE_DEBOUNCE_MS);
+  }
+
+  function checkSuspiciousResize() {
+    resizeTimer = null;
+    if (!isStrictMode() || !fullscreenEverEntered || hardEnded) return;
+    if (!currentAttempt || !isFullscreenActive()) return;
+    const sw = window.screen ? window.screen.width : window.innerWidth;
+    const sh = window.screen ? window.screen.height : window.innerHeight;
+    if (!sw || !sh) return;
+    const widthRatio = Math.max(window.innerWidth / sw, window.innerWidth / sh);
+    const heightRatio = Math.max(window.innerHeight / sw, window.innerHeight / sh);
+    if (widthRatio < STRICT_RESIZE_RATIO || heightRatio < STRICT_RESIZE_RATIO) {
+      onFocusLost("suspicious_resize", {
+        widthRatio: Math.round(widthRatio * 1000) / 1000,
+        heightRatio: Math.round(heightRatio * 1000) / 1000,
+      });
+      showFullscreenGate("Размерът на прозореца се промени. Влезте отново в цял екран.");
     }
   }
 
@@ -512,6 +807,7 @@
     stopTimer();
     stopLobbyPoll();
     clearFeedbackState();
+    clearLostFocusState();
     show("end");
     const reason = data.reason || "completed";
     const score = data.score;

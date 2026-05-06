@@ -124,11 +124,30 @@ def main():
                          "swap_policy": "soft",
                          "permutation": "per_view",
                          "feedback": "immediate",
+                         "security_mode": "standard",
                      },
                      headers=admin_headers)
     code = create["join_code"]
     sid = create["session_id"]
     print(f"   session_id={sid}, code={code}")
+
+    print("[3b] create strict session")
+    strict_create = request("POST", f"{base}/quiz/admin/session/create",
+                            body={
+                                "bank_id": bank_id,
+                                "lecture_tags": ["ch01_intro"],
+                                "display_name": "Smoke strict",
+                                "item_count": 5,
+                                "duration_minutes": 5,
+                                "swap_policy": "soft",
+                                "permutation": "per_view",
+                                "feedback": "immediate",
+                                "security_mode": "strict",
+                            },
+                            headers=admin_headers)
+    assert strict_create["security_mode"] == "strict", strict_create
+    strict_sid = strict_create["session_id"]
+    print(f"   strict_session_id={strict_sid}, code={strict_create['join_code']}")
 
     print("[4] start session")
     start = request("POST", f"{base}/quiz/admin/session/start",
@@ -148,6 +167,16 @@ def main():
         if nxt.get("session_ended"):
             print(f"   ended early: {nxt}")
             break
+        if i == 0:
+            incident = request("POST", f"{base}/quiz/incident",
+                               body={
+                                   "student_token": j1["student_token"],
+                                   "attempt_id": nxt["attempt_id"],
+                                   "event_type": "smoke_incident",
+                                   "client_ts": 1234567890,
+                                   "metadata": {"source": "smoke_test"},
+                               })
+            assert incident.get("ok"), incident
         ans = request("POST", f"{base}/quiz/answer",
                       body={"attempt_id": nxt["attempt_id"], "chosen_visible_index": 0})
         print(f"   q{nxt['ord']}: stem={nxt['stem'][:30]!r}, ord={nxt['ord']}, correct={ans['correct']}")
@@ -171,6 +200,7 @@ def main():
     print(f"   students={len(live['students'])}, remaining={live['remaining_ms']}ms")
     for s in live["students"]:
         print(f"     {s}")
+    assert any(s["incidents"] >= 1 for s in live["students"]), live["students"]
 
     print("[10] export xlsx")
     body, headers = request("GET", f"{base}/quiz/admin/session/export?session_id={sid}",
@@ -178,18 +208,25 @@ def main():
     print(f"   bytes={len(body)}, Content-Type={headers.get('Content-Type')}")
     wb = load_workbook(io.BytesIO(body))
     print(f"   sheets={wb.sheetnames}")
-    assert wb.sheetnames == ["summary", "detail"], wb.sheetnames
+    assert wb.sheetnames == ["summary", "detail", "incidents"], wb.sheetnames
     summary_rows = list(wb["summary"].iter_rows(values_only=True))
     detail_rows = list(wb["detail"].iter_rows(values_only=True))
+    incident_rows = list(wb["incidents"].iter_rows(values_only=True))
     print(f"   summary header: {summary_rows[0]}")
     print(f"   summary rows after header: {len(summary_rows) - 1}")
     print(f"   detail rows after header: {len(detail_rows) - 1}")
+    print(f"   incident rows after header: {len(incident_rows) - 1}")
+    assert "incident_count" in summary_rows[0]
+    assert len(incident_rows) >= 2
 
     print("[11] close session")
     close = request("POST", f"{base}/quiz/admin/session/close",
                     body={"session_id": sid}, headers=admin_headers)
     assert close.get("closed_at"), close
     print("   closed_at:", close["closed_at"])
+    strict_close = request("POST", f"{base}/quiz/admin/session/close",
+                           body={"session_id": strict_sid}, headers=admin_headers)
+    assert strict_close.get("closed_at"), strict_close
 
     print("\nAll smoke checks passed ✓")
 

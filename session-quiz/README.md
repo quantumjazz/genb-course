@@ -21,11 +21,17 @@ frontend, no build step. Two external deps: `openpyxl` (Excel I/O) and
 
 ## Anti-cheat: blur swap
 
-The quiz card binds `visibilitychange` and `window.blur` to a
-`POST /quiz/blur` call. The server marks the in-flight attempt
-`swapped=1`, **does not** count it toward `item_count`, and serves a
-fresh item on the next `/quiz/next` call. With `swap_policy=hard`, the
-server instead ends that student's session with `end_reason='blur_hard'`.
+The quiz card binds `visibilitychange`, `window.blur`, and `pagehide` to
+a `/quiz/blur` invalidation. The client records a local lost-focus marker,
+uses `navigator.sendBeacon()` where possible, and forces a server refresh
+when focus returns before allowing another answer. The server marks the
+in-flight attempt `swapped=1`, **does not** count it toward `item_count`,
+and serves a fresh item on the next `/quiz/next` call. With
+`swap_policy=hard`, the server instead ends that student's session with
+`end_reason='blur_hard'`.
+In soft mode, swapped questions are still treated as seen for that
+student, so they reduce the remaining unique pool and prevent question
+shopping.
 
 Per-view option permutation: every time an item is served (including
 re-serves after a blur swap) the options are shuffled with a fresh seed.
@@ -34,6 +40,11 @@ The server records `option_order_json` and maps the student's
 
 `copy`/`cut`/`contextmenu` on the quiz card are `preventDefault()`'d.
 Friction only; not relied on.
+
+With `security_mode=strict`, students must enter browser fullscreen before
+the first live question. Fullscreen exit, blur/visibility/pagehide, and a
+suspicious fullscreen resize are logged as incidents and invalidate the
+current attempt through the same blur-swap path.
 
 ## Run the backend
 
@@ -85,14 +96,16 @@ version. The original `.xlsx` is archived under `backend/banks/<bank_id>.xlsx`.
 
 ## Excel export
 
-Two sheets per session:
+Three sheets per session:
 
 - **`summary`** — `student_number, joined_at, ended_at, end_reason,
-  items_answered, items_correct, score_pct, blur_count`.
+  items_answered, items_correct, score_pct, blur_count, incident_count`.
 - **`detail`** — one row per attempt (including swapped):
   `student_number, ord, bank_item_id, lecture_tag, stem,
   chosen_option_text, correct_option_text, correct, swapped, served_at,
   submitted_at, response_ms`.
+- **`incidents`** — trust events logged by strict mode:
+  `student_number, event_type, attempt_id, client_ts, server_ts, metadata_json`.
 
 Timestamps as Excel-native datetimes; `score_pct` as a number.
 
@@ -102,8 +115,9 @@ Student (no key):
 
 - `POST /quiz/join` — `{code, student_number}` → `{student_token, …, rules_text}`.
 - `GET /quiz/next?student_token=…` — `{attempt_id, stem, options[], ord, item_count, remaining_ms}` or `{session_ended:true, reason, score}`.
-- `POST /quiz/answer` — `{attempt_id, chosen_visible_index}` → `{correct, explanation?, correct_option_text?}`.
+- `POST /quiz/answer` — `{attempt_id, chosen_visible_index}` → `{correct, explanation?, correct_option_text?, correct_visible_index?}` or `{session_ended:true, reason, score}`.
 - `POST /quiz/blur` — `{attempt_id}` → `{swapped:true}` or `{session_ended:true, reason:"blur_hard"}`.
+- `POST /quiz/incident` — `{student_token, attempt_id?, event_type, client_ts?, metadata?}` → `{ok:true}`.
 - `GET /quiz/live_status?student_token=…` — `{status, ended, end_reason, remaining_ms?}` (lobby→live polling).
 
 Instructor (HMAC `X-Admin-Key` or `X-Admin-Key-B64`):
@@ -111,7 +125,7 @@ Instructor (HMAC `X-Admin-Key` or `X-Admin-Key-B64`):
 - `POST /quiz/admin/bank/upload` — multipart `.xlsx` → `{bank_id, item_count, tags, warnings?}`.
 - `GET /quiz/admin/bank/list` — list banks with tag counts.
 - `DELETE /quiz/admin/bank/{bank_id}` — remove a bank (rejects if used by any session).
-- `POST /quiz/admin/session/create` — all options from spec §4 → `{session_id, join_code, qr_png_url, …}`.
+- `POST /quiz/admin/session/create` — all options from spec §4, including `lecture_tags` multi-select → `{session_id, join_code, qr_png_url, …}`.
 - `POST /quiz/admin/session/start` / `close` — toggle session lifecycle.
 - `GET /quiz/admin/session/list` — past + live sessions.
 - `GET /quiz/admin/session/live?session_id=…` — `{session, elapsed_ms, remaining_ms, students[]}` (3s poll).

@@ -48,6 +48,7 @@ DEFAULTS = {
     "permutation": "per_view",
     "feedback": "immediate",
     "exhaustion_policy": "end_session",
+    "security_mode": "standard",
 }
 
 VALID = {
@@ -55,6 +56,7 @@ VALID = {
     "permutation": {"per_view", "per_student"},
     "feedback": {"immediate", "end_of_session"},
     "exhaustion_policy": {"end_session", "recycle"},
+    "security_mode": {"standard", "strict"},
 }
 
 ITEM_COUNT_RANGE = (5, 100)
@@ -134,6 +136,66 @@ def pick_enum(value, name, choices, default):
     return value
 
 
+def _clean_tag_list(values):
+    tags = []
+    seen = set()
+    for value in values:
+        tag = str(value or "").strip()
+        if not tag or tag in seen:
+            continue
+        tags.append(tag)
+        seen.add(tag)
+    return tags
+
+
+def parse_session_tags(value):
+    """Return the tag list stored on quiz_session.lecture_tag.
+
+    Older sessions store a single plain tag. New multi-tag sessions store a
+    JSON list in the same column so the schema remains compatible.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return []
+    if text.startswith("["):
+        try:
+            loaded = json.loads(text)
+        except json.JSONDecodeError:
+            loaded = None
+        if isinstance(loaded, list):
+            return _clean_tag_list(loaded)
+    return _clean_tag_list(text.split(","))
+
+
+def session_tags(session_row):
+    return parse_session_tags(session_row["lecture_tag"])
+
+
+def session_tag_label(tags):
+    return " + ".join(tags)
+
+
+def encode_session_tags(tags):
+    return tags[0] if len(tags) == 1 else json_dumps(tags)
+
+
+def requested_tags(payload):
+    raw = payload.get("lecture_tags")
+    if isinstance(raw, list):
+        return _clean_tag_list(raw)
+    if isinstance(raw, str) and raw.strip():
+        text = raw.strip()
+        if text.startswith("["):
+            try:
+                loaded = json.loads(text)
+            except json.JSONDecodeError:
+                loaded = None
+            if isinstance(loaded, list):
+                return _clean_tag_list(loaded)
+        return _clean_tag_list(text.split(","))
+    return _clean_tag_list([payload.get("lecture_tag")])
+
+
 # ---------------------------------------------------------------------------
 # Rules text (Bulgarian, derived from session params)
 # ---------------------------------------------------------------------------
@@ -160,6 +222,11 @@ def rules_text(session_row):
         parts.append("След всеки отговор виждате дали е верен.")
     else:
         parts.append("Резултатите се показват в края на теста.")
+    if session_row["security_mode"] == "strict":
+        parts.append(
+            "Тестът изисква режим на цял екран; напускане на цял екран "
+            "или промяна на прозореца сменя текущия въпрос."
+        )
     return " ".join(parts)
 
 
@@ -176,6 +243,19 @@ def end_student(conn, session_id, student_token, reason):
                AND ended_at IS NULL""",
         (now_ms(), reason, session_id, student_token),
     )
+
+
+def ending_reason_for_student(conn, session_row, student):
+    """Return an end reason if this student can no longer answer."""
+    if student["ended_at"]:
+        return student["end_reason"] or "instructor_closed"
+    if session_row["status"] == "closed":
+        end_student(conn, session_row["id"], student["student_token"], "instructor_closed")
+        return "instructor_closed"
+    if session_row["started_at"] and compute_remaining_ms(session_row) <= 0:
+        end_student(conn, session_row["id"], student["student_token"], "time_up")
+        return "time_up"
+    return None
 
 
 def student_row(conn, session_id, student_token):
@@ -234,6 +314,14 @@ def count_blur(conn, session_id, student_token):
     ).fetchone()["n"]
 
 
+def count_incidents(conn, session_id, student_token):
+    return conn.execute(
+        """SELECT COUNT(*) AS n FROM quiz_incident
+            WHERE session_id = ? AND student_token = ?""",
+        (session_id, student_token),
+    ).fetchone()["n"]
+
+
 def seen_item_ids(conn, session_id, student_token):
     rows = conn.execute(
         """SELECT DISTINCT bank_item_id FROM quiz_attempt
@@ -271,13 +359,16 @@ def pick_next_item(conn, session_row, student_token):
     """Pick the next bank_item for this student. Respects exhaustion_policy."""
     session_id = session_row["id"]
     bank_id = session_row["bank_id"]
-    lecture_tag = session_row["lecture_tag"]
+    tags = session_tags(session_row)
+    if not tags:
+        return None, "exhausted"
 
+    placeholders = ",".join("?" for _ in tags)
     items = conn.execute(
-        """SELECT * FROM bank_item
-            WHERE bank_id = ? AND lecture_tag = ?
-         ORDER BY id""",
-        (bank_id, lecture_tag),
+        f"""SELECT * FROM bank_item
+             WHERE bank_id = ? AND lecture_tag IN ({placeholders})
+          ORDER BY id""",
+        [bank_id, *tags],
     ).fetchall()
     if not items:
         return None, "exhausted"
@@ -363,6 +454,7 @@ def export_xlsx(conn, session_id):
     summary.append([
         "student_number", "joined_at", "ended_at", "end_reason",
         "items_answered", "items_correct", "score_pct", "blur_count",
+        "incident_count",
     ])
 
     detail = wb.create_sheet("detail")
@@ -372,10 +464,17 @@ def export_xlsx(conn, session_id):
         "served_at", "submitted_at", "response_ms",
     ])
 
+    incidents = wb.create_sheet("incidents")
+    incidents.append([
+        "student_number", "event_type", "attempt_id", "client_ts",
+        "server_ts", "metadata_json",
+    ])
+
     for s in students:
         answered = count_answered(conn, session_id, s["student_token"])
         correct = count_correct(conn, session_id, s["student_token"])
         blur = count_blur(conn, session_id, s["student_token"])
+        incident_count = count_incidents(conn, session_id, s["student_token"])
         score_pct = round(100.0 * correct / answered, 2) if answered else 0.0
 
         summary.append([
@@ -387,6 +486,7 @@ def export_xlsx(conn, session_id):
             correct,
             score_pct,
             blur,
+            incident_count,
         ])
 
         attempts = conn.execute(
@@ -431,13 +531,32 @@ def export_xlsx(conn, session_id):
                 response_ms if response_ms is not None else "",
             ])
 
+        incident_rows = conn.execute(
+            """SELECT * FROM quiz_incident
+                WHERE session_id = ? AND student_token = ?
+             ORDER BY server_ts""",
+            (session_id, s["student_token"]),
+        ).fetchall()
+        for incident in incident_rows:
+            incidents.append([
+                s["student_number"],
+                incident["event_type"],
+                incident["attempt_id"] or "",
+                _epoch_to_dt(incident["client_ts"]),
+                _epoch_to_dt(incident["server_ts"]),
+                incident["metadata_json"] or "{}",
+            ])
+
     # Freeze header rows; widen a few key columns.
     summary.freeze_panes = "A2"
     detail.freeze_panes = "A2"
+    incidents.freeze_panes = "A2"
     for col_letter in ("A", "B", "C", "D"):
         summary.column_dimensions[col_letter].width = 18
     for col_letter, width in (("A", 16), ("E", 50), ("F", 30), ("G", 30)):
         detail.column_dimensions[col_letter].width = width
+    for col_letter, width in (("A", 16), ("B", 24), ("C", 34), ("F", 70)):
+        incidents.column_dimensions[col_letter].width = width
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -709,6 +828,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._handle_answer(payload)
             if path == "/quiz/blur":
                 return self._handle_blur(payload)
+            if path == "/quiz/incident":
+                return self._handle_incident(payload)
             if path == "/quiz/admin/session/create":
                 if not self._require_admin():
                     return
@@ -872,26 +993,38 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_session_create(self, payload):
         bank_id = (payload.get("bank_id") or "").strip()
-        lecture_tag = (payload.get("lecture_tag") or "").strip()
+        tags = requested_tags(payload)
         if not bank_id:
             raise ValueError("bank_id is required.")
-        if not lecture_tag:
-            raise ValueError("lecture_tag is required.")
+        if not tags:
+            raise ValueError("At least one lecture_tag is required.")
 
         conn = self._conn()
         bank = conn.execute("SELECT * FROM bank WHERE id = ?", (bank_id,)).fetchone()
         if not bank:
             raise ValueError("Unknown bank.")
-        tag_count = conn.execute(
-            "SELECT COUNT(*) AS n FROM bank_item WHERE bank_id = ? AND lecture_tag = ?",
-            (bank_id, lecture_tag),
-        ).fetchone()["n"]
-        if tag_count == 0:
-            raise ValueError(f"No items with tag '{lecture_tag}' in this bank.")
+        placeholders = ",".join("?" for _ in tags)
+        tag_rows = conn.execute(
+            f"""SELECT lecture_tag, COUNT(*) AS n
+                  FROM bank_item
+                 WHERE bank_id = ? AND lecture_tag IN ({placeholders})
+              GROUP BY lecture_tag""",
+            [bank_id, *tags],
+        ).fetchall()
+        tag_counts = {r["lecture_tag"]: r["n"] for r in tag_rows}
+        missing_tags = [tag for tag in tags if tag_counts.get(tag, 0) == 0]
+        if missing_tags:
+            raise ValueError(
+                "No items with selected tag(s): " + ", ".join(missing_tags)
+            )
+        available_item_count = sum(tag_counts[tag] for tag in tags)
 
-        display_name = (payload.get("display_name") or lecture_tag).strip()
+        default_display = session_tag_label(tags)
+        if len(default_display) > 80:
+            default_display = f"{len(tags)} lecture_tags"
+        display_name = (payload.get("display_name") or default_display).strip()
         if not display_name:
-            display_name = lecture_tag
+            display_name = default_display
         if len(display_name) > 80:
             raise ValueError("display_name must be at most 80 characters.")
 
@@ -919,6 +1052,10 @@ class Handler(BaseHTTPRequestHandler):
             payload.get("exhaustion_policy"), "exhaustion_policy",
             VALID["exhaustion_policy"], DEFAULTS["exhaustion_policy"],
         )
+        security = pick_enum(
+            payload.get("security_mode"), "security_mode",
+            VALID["security_mode"], DEFAULTS["security_mode"],
+        )
 
         # Generate a unique join code (retry a few times on rare collision).
         for _ in range(8):
@@ -930,17 +1067,18 @@ class Handler(BaseHTTPRequestHandler):
 
         session_id = new_id()
         pseudonym_key = secrets.token_bytes(PSEUDONYM_KEY_BYTES)
+        lecture_tag_value = encode_session_tags(tags)
         with conn:
             conn.execute(
                 """INSERT INTO quiz_session
                      (id, join_code, bank_id, lecture_tag, display_name,
                       item_count, duration_minutes, swap_policy, permutation,
-                      feedback, exhaustion_policy, pseudonym_key,
+                      feedback, exhaustion_policy, security_mode, pseudonym_key,
                       created_at, status)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'lobby')""",
-                (session_id, code, bank_id, lecture_tag, display_name,
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'lobby')""",
+                (session_id, code, bank_id, lecture_tag_value, display_name,
                  item_count, duration, swap, perm, feedback, exhaustion,
-                 pseudonym_key, now_ms()),
+                 security, pseudonym_key, now_ms()),
             )
 
         return self._send_json(201, {
@@ -949,13 +1087,16 @@ class Handler(BaseHTTPRequestHandler):
             "qr_png_url": f"/quiz/admin/session/qr?session_id={session_id}",
             "display_name": display_name,
             "bank_id": bank_id,
-            "lecture_tag": lecture_tag,
+            "lecture_tag": session_tag_label(tags),
+            "lecture_tags": tags,
+            "available_item_count": available_item_count,
             "item_count": item_count,
             "duration_minutes": duration,
             "swap_policy": swap,
             "permutation": perm,
             "feedback": feedback,
             "exhaustion_policy": exhaustion,
+            "security_mode": security,
             "status": "lobby",
         })
 
@@ -1051,6 +1192,7 @@ class Handler(BaseHTTPRequestHandler):
                 "answered": count_answered(conn, session_id, s["student_token"]),
                 "current_ord": count_ord(conn, session_id, s["student_token"]),
                 "swapped": count_blur(conn, session_id, s["student_token"]),
+                "incidents": count_incidents(conn, session_id, s["student_token"]),
                 "ended": bool(s["ended_at"]),
                 "end_reason": s["end_reason"],
                 "joined_at": s["joined_at"],
@@ -1135,6 +1277,7 @@ class Handler(BaseHTTPRequestHandler):
             "duration_minutes": row["duration_minutes"],
             "feedback": row["feedback"],
             "swap_policy": row["swap_policy"],
+            "security_mode": row["security_mode"],
         })
 
     def _handle_live_status(self, qs):
@@ -1144,7 +1287,8 @@ class Handler(BaseHTTPRequestHandler):
         conn = self._conn()
         s = conn.execute(
             """SELECT st.*, qs.status AS session_status, qs.display_name,
-                      qs.item_count, qs.started_at, qs.duration_minutes
+                      qs.item_count, qs.started_at, qs.duration_minutes,
+                      qs.security_mode
                  FROM quiz_student st
                  JOIN quiz_session qs ON qs.id = st.session_id
                 WHERE st.student_token = ?""",
@@ -1156,6 +1300,7 @@ class Handler(BaseHTTPRequestHandler):
             "status": s["session_status"],
             "display_name": s["display_name"],
             "item_count": s["item_count"],
+            "security_mode": s["security_mode"],
             "ended": bool(s["ended_at"]),
             "end_reason": s["end_reason"],
         }
@@ -1165,6 +1310,62 @@ class Handler(BaseHTTPRequestHandler):
                 s["started_at"] + s["duration_minutes"] * 60_000 - now_ms(),
             )
         return self._send_json(200, payload)
+
+    def _handle_incident(self, payload):
+        token = (payload.get("student_token") or "").strip()
+        attempt_id = (payload.get("attempt_id") or "").strip() or None
+        event_type = (payload.get("event_type") or "").strip().lower()
+        if not token:
+            raise ValueError("student_token is required.")
+        if not event_type:
+            raise ValueError("event_type is required.")
+        if not re.match(r"^[a-z0-9_:-]{1,64}$", event_type):
+            raise ValueError("event_type must be 1-64 lowercase identifier characters.")
+
+        client_ts = payload.get("client_ts")
+        if client_ts in ("", None):
+            client_ts = None
+        else:
+            try:
+                client_ts = int(client_ts)
+            except (TypeError, ValueError):
+                raise ValueError("client_ts must be an integer epoch ms.")
+
+        metadata = payload.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata must be an object.")
+        metadata_json = json_dumps(metadata)
+        if len(metadata_json.encode("utf-8")) > 4096:
+            raise ValueError("metadata is too large.")
+
+        conn = self._conn()
+        if attempt_id:
+            attempt = conn.execute(
+                "SELECT * FROM quiz_attempt WHERE id = ?", (attempt_id,)
+            ).fetchone()
+            if not attempt:
+                raise ValueError("Unknown attempt.")
+            if attempt["student_token"] != token:
+                raise ValueError("Attempt does not belong to this student.")
+            session_id = attempt["session_id"]
+        else:
+            student = student_row_by_token(conn, token)
+            if not student:
+                raise ValueError("Unknown student token.")
+            session_id = student["session_id"]
+
+        with conn:
+            conn.execute(
+                """INSERT INTO quiz_incident
+                     (id, session_id, student_token, attempt_id, event_type,
+                      client_ts, server_ts, metadata_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    new_id(), session_id, token, attempt_id, event_type,
+                    client_ts, now_ms(), metadata_json,
+                ),
+            )
+        return self._send_json(201, {"ok": True})
 
     def _handle_next(self, qs):
         token = (qs.get("student_token", [""])[0] or "").strip()
@@ -1178,18 +1379,21 @@ class Handler(BaseHTTPRequestHandler):
         if not session_row:
             return self._send_error(404, "Session not found.")
 
-        # If session not live, nothing to serve.
-        if session_row["status"] == "lobby":
-            return self._send_json(200, {"session_status": "lobby"})
-        if session_row["status"] == "closed":
-            return self._send_json(200, _ended_payload(
-                conn, session_row, s, s["end_reason"] or "instructor_closed"
-            ))
-
         # Already ended?
         if s["ended_at"]:
             return self._send_json(200, _ended_payload(
                 conn, session_row, s, s["end_reason"]
+            ))
+
+        # If session not live, nothing to serve.
+        if session_row["status"] == "lobby":
+            return self._send_json(200, {"session_status": "lobby"})
+        if session_row["status"] == "closed":
+            with conn:
+                end_student(conn, session_row["id"], token, "instructor_closed")
+            s = student_row_by_token(conn, token)
+            return self._send_json(200, _ended_payload(
+                conn, session_row, s, s["end_reason"] or "instructor_closed"
             ))
 
         lock = SESSION_LOCKS.get(session_row["id"])
@@ -1198,12 +1402,14 @@ class Handler(BaseHTTPRequestHandler):
             s = student_row_by_token(conn, token)
             session_row = session_by_id(conn, s["session_id"])
 
-            # Check time-up.
-            if session_row["started_at"] and compute_remaining_ms(session_row) <= 0:
-                end_student(conn, session_row["id"], token, "time_up")
+            if session_row["status"] == "lobby":
+                return self._send_json(200, {"session_status": "lobby"})
+
+            reason = ending_reason_for_student(conn, session_row, s)
+            if reason:
                 s = student_row_by_token(conn, token)
                 return self._send_json(200, _ended_payload(
-                    conn, session_row, s, "time_up"
+                    conn, session_row, s, reason
                 ))
 
             # Reuse in-flight attempt if any.
@@ -1221,6 +1427,7 @@ class Handler(BaseHTTPRequestHandler):
                     "options": [options[i] for i in order],
                     "ord": pending["ord"],
                     "item_count": session_row["item_count"],
+                    "security_mode": session_row["security_mode"],
                     "remaining_ms": compute_remaining_ms(session_row),
                 })
 
@@ -1245,6 +1452,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(200, {
             **served,
             "item_count": session_row["item_count"],
+            "security_mode": session_row["security_mode"],
             "remaining_ms": compute_remaining_ms(session_row),
         })
 
@@ -1263,29 +1471,48 @@ class Handler(BaseHTTPRequestHandler):
         ).fetchone()
         if not row:
             raise ValueError("Unknown attempt.")
-        if row["submitted_at"] is not None:
-            raise ValueError("Attempt already submitted.")
-        if row["swapped"]:
-            raise ValueError("This attempt was swapped.")
-
-        item = conn.execute(
-            "SELECT * FROM bank_item WHERE id = ?", (row["bank_item_id"],)
-        ).fetchone()
-        order = json.loads(row["option_order_json"])
-        if chosen_visible_index < 0 or chosen_visible_index >= len(order):
-            raise ValueError("chosen_visible_index out of range.")
-        canonical_index = order[chosen_visible_index]
-        correct = 1 if canonical_index == item["correct_index"] else 0
-
-        session_row = session_by_id(conn, row["session_id"])
         lock = SESSION_LOCKS.get(row["session_id"])
         with lock, conn:
-            # Conditional update guards against a TOCTOU race with
-            # /quiz/blur: if a concurrent blur swap landed between the
-            # validation reads above and this UPDATE, the WHERE clause
-            # rejects the row and rowcount stays 0. Without the guard the
-            # UPDATE would clobber the swap, restoring submitted_at and
-            # awarding credit on a row the student blurred away from.
+            row = conn.execute(
+                "SELECT * FROM quiz_attempt WHERE id = ?", (attempt_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError("Unknown attempt.")
+            if row["submitted_at"] is not None:
+                raise ValueError("Attempt already submitted.")
+            if row["swapped"]:
+                raise ValueError("This attempt was swapped.")
+
+            session_row = session_by_id(conn, row["session_id"])
+            if not session_row:
+                return self._send_error(404, "Session not found.")
+            student = student_row(conn, row["session_id"], row["student_token"])
+            if not student:
+                raise ValueError("Unknown student token.")
+            if session_row["status"] == "lobby":
+                return self._send_json(
+                    409,
+                    {"error": "Session is not live."},
+                )
+            reason = ending_reason_for_student(conn, session_row, student)
+            if reason:
+                student = student_row(conn, row["session_id"], row["student_token"])
+                return self._send_json(
+                    200,
+                    _ended_payload(conn, session_row, student, reason),
+                )
+
+            item = conn.execute(
+                "SELECT * FROM bank_item WHERE id = ?", (row["bank_item_id"],)
+            ).fetchone()
+            order = json.loads(row["option_order_json"])
+            if chosen_visible_index < 0 or chosen_visible_index >= len(order):
+                raise ValueError("chosen_visible_index out of range.")
+            canonical_index = order[chosen_visible_index]
+            correct = 1 if canonical_index == item["correct_index"] else 0
+            correct_visible_index = order.index(item["correct_index"])
+
+            # Conditional update guards against a TOCTOU race with /quiz/blur.
             cur = conn.execute(
                 """UPDATE quiz_attempt
                       SET chosen_index = ?, correct = ?, submitted_at = ?
@@ -1305,6 +1532,7 @@ class Handler(BaseHTTPRequestHandler):
             payload_out["explanation"] = item["explanation"] or ""
             options_canon = json.loads(item["options_json"])
             payload_out["correct_option_text"] = options_canon[item["correct_index"]]
+            payload_out["correct_visible_index"] = correct_visible_index
         return self._send_json(200, payload_out)
 
     def _handle_blur(self, payload):
@@ -1363,11 +1591,13 @@ def student_row_by_token(conn, token):
 
 
 def _session_public(row):
+    tags = session_tags(row)
     return {
         "session_id": row["id"],
         "join_code": row["join_code"],
         "bank_id": row["bank_id"],
-        "lecture_tag": row["lecture_tag"],
+        "lecture_tag": session_tag_label(tags),
+        "lecture_tags": tags,
         "display_name": row["display_name"],
         "item_count": row["item_count"],
         "duration_minutes": row["duration_minutes"],
@@ -1375,6 +1605,7 @@ def _session_public(row):
         "permutation": row["permutation"],
         "feedback": row["feedback"],
         "exhaustion_policy": row["exhaustion_policy"],
+        "security_mode": row["security_mode"],
         "status": row["status"],
         "created_at": row["created_at"],
         "started_at": row["started_at"],
