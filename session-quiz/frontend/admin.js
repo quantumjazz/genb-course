@@ -3,6 +3,8 @@
 
   const KEY_STORAGE = "session-quiz-admin-key-v1";
   const ACTIVE_SESSION_STORAGE = "session-quiz-active-session-v1";
+  const BANKS_EMPTY_TEXT = "Все още няма качени банки.";
+  const SESSIONS_EMPTY_TEXT = "Няма сесии.";
 
   let adminKey = "";
   let activeSessionId = null;
@@ -155,11 +157,14 @@
       banksCache = [];
       renderBanks([]);
       renderBankSelect([]);
+      els.banksEmpty.hidden = false;
+      els.banksEmpty.textContent = `Грешка при зареждане на банките: ${err.message}`;
       if (adminKey) toast(`Зареждането на банките не успя: ${err.message}`, "error");
     }
   }
 
   function renderBanks(banks) {
+    els.banksEmpty.textContent = BANKS_EMPTY_TEXT;
     els.banksEmpty.hidden = banks.length > 0;
     els.banksTable.innerHTML = banks.map((b) => `
       <tr>
@@ -291,7 +296,11 @@
       els.uploadResult.textContent = lines.join("\n");
       els.uploadResult.style.whiteSpace = "pre-wrap";
       els.uploadForm.reset();
-      refreshBanks();
+      await refreshBanks();
+      if (result.bank_id && banksCache.some((b) => b.bank_id === result.bank_id)) {
+        els.cfBank.value = result.bank_id;
+        onBankChange();
+      }
     } catch (err) {
       els.uploadResult.textContent = "✗ " + (err.message || "Грешка при качване.");
       toast(err.message || "Качването не успя.", "error");
@@ -317,6 +326,8 @@
       renderSessions(data.sessions || []);
     } catch (err) {
       renderSessions([]);
+      els.sessionsEmpty.hidden = false;
+      els.sessionsEmpty.textContent = `Грешка при зареждане на сесиите: ${err.message}`;
       if (adminKey) toast(`Зареждането на сесиите не успя: ${err.message}`, "error");
     }
   }
@@ -329,6 +340,7 @@
   }
 
   function renderSessions(sessions) {
+    els.sessionsEmpty.textContent = SESSIONS_EMPTY_TEXT;
     els.sessionsEmpty.hidden = sessions.length > 0;
     els.sessionsTable.innerHTML = sessions.map((s) => {
       const statusBadge = ({
