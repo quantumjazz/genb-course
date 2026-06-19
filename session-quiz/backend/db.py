@@ -110,6 +110,12 @@ def init_schema(conn):
         conn.executescript(SCHEMA)
         _ensure_column(
             conn,
+            "bank",
+            "source_filename",
+            "TEXT",
+        )
+        _ensure_column(
+            conn,
             "quiz_session",
             "security_mode",
             "TEXT NOT NULL DEFAULT 'standard'",

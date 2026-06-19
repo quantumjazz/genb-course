@@ -67,7 +67,7 @@ Environment variables:
 |---|---|---|
 | `QUIZ_ADMIN_KEY` | _empty_ | Required for admin endpoints. Empty = dev/open mode. |
 | `QUIZ_ALLOWED_ORIGIN` | _empty (allow any)_ | CORS origin if the frontend lives on a different host. |
-| `QUIZ_DB_PATH` | `backend/data/quiz.db` | SQLite path. |
+| `QUIZ_DB_PATH` | `backend/data/quiz.db` | SQLite path. Leave unset for the default; blank values are treated as unset and in-memory SQLite is refused. |
 | `QUIZ_PUBLIC_URL` | _empty_ | Base URL embedded into QR codes (e.g. `https://quiz.example.com`). |
 | `QUIZ_FRONTEND_DIR` | auto-detect `../frontend` | Directory of static files to serve. |
 
@@ -77,6 +77,12 @@ To reset a local database:
 rm backend/data/quiz.db backend/data/quiz.db-wal backend/data/quiz.db-shm
 rm backend/banks/*.xlsx
 ```
+
+On a hosted machine, the server prints the exact resolved database path at
+startup (`[quiz] db: ...`). If an update appears to show an empty instructor
+console, check that path first; the old `quiz.db`, `quiz.db-wal`,
+`quiz.db-shm`, and `backend/banks/*.xlsx` files should remain at the path the
+server is actually using.
 
 ## Question-bank Excel format
 

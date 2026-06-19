@@ -1650,6 +1650,30 @@ def _content_type_for(filename):
     return "application/octet-stream"
 
 
+def resolve_db_path(root, cli_db):
+    default = (root / "data" / "quiz.db").resolve()
+    raw = cli_db if cli_db is not None else os.environ.get("QUIZ_DB_PATH", "")
+    text = str(raw or "").strip()
+    if not text:
+        return default
+
+    lowered = text.lower()
+    if (
+        lowered == ":memory:"
+        or lowered.startswith("file::memory:")
+        or "mode=memory" in lowered
+    ):
+        raise SystemExit(
+            "[quiz] Refusing an in-memory SQLite database for this server. "
+            "Use a file path for QUIZ_DB_PATH so banks and sessions persist."
+        )
+
+    path = Path(text).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    return path
+
+
 class QuizServer(ThreadingHTTPServer):
     def __init__(self, address, handler, db_path, admin_key, allowed_origin,
                  banks_dir, public_base_url, frontend_dir):
@@ -1684,10 +1708,8 @@ def main():
     parser.add_argument("--db", default=None)
     args = parser.parse_args()
 
-    root = Path(__file__).parent
-    db_path = args.db or os.environ.get(
-        "QUIZ_DB_PATH", str(root / "data" / "quiz.db"),
-    )
+    root = Path(__file__).parent.resolve()
+    db_path = resolve_db_path(root, args.db)
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
     banks_dir = root / "banks"
@@ -1704,10 +1726,14 @@ def main():
         candidate = (root.parent / "frontend").resolve()
         frontend_dir = candidate if candidate.is_dir() else None
 
-    dbmod.init_schema(dbmod.connect(db_path))
+    init_conn = dbmod.connect(db_path)
+    try:
+        dbmod.init_schema(init_conn)
+    finally:
+        init_conn.close()
 
     server = QuizServer(
-        (args.host, args.port), Handler, db_path, admin_key, allowed_origin,
+        (args.host, args.port), Handler, str(db_path), admin_key, allowed_origin,
         banks_dir, public_base_url, frontend_dir,
     )
     print(f"[quiz] listening on {args.host}:{args.port}")
