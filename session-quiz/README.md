@@ -222,8 +222,9 @@ python3 smoke_test.py --base http://localhost:8789 --admin local-test-key
 
 The backend runs on the same Ubuntu LTS host as `labor.visiometrica.com`
 and `matching.visiometrica.com`, behind the same Cloudflare Tunnel.
-Port **8789** is reserved for this service. Concrete deployment
-and rollback instructions are in [DEPLOYMENT.md](DEPLOYMENT.md).
+The deployed systemd service binds to **127.0.0.1:8003**; the development
+server defaults to **8789**. Deployment and rollback instructions are in
+[DEPLOYMENT.md](DEPLOYMENT.md).
 
 Before opening the updated service to students, verify HTTPS, the correct
 database path/backup, a strong `QUIZ_ADMIN_KEY`, the intended allowed frontend

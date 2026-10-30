@@ -1,7 +1,9 @@
 # Session Quiz deployment and rollback
 
 The existing Ubuntu deployment runs `session-quiz.service`, as the application
-owner, on port 8789 behind Cloudflare Tunnel. Its working directory is
+owner, on `127.0.0.1:8003` behind Cloudflare Tunnel. The standalone development
+default is 8789; inspect the unit's actual `--port` before health checks.
+Its working directory is
 `~/apps/session-quiz/backend`, which resolves into the repository at
 `~/apps/genb-course/session-quiz/backend`. Preserve that link and the service's
 existing `QUIZ_DB_PATH`; do not create a new database during an update.
