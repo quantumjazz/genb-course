@@ -40,6 +40,8 @@ SESSION_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # ambiguous chars remov
 SESSION_CODE_LEN = 6
 PSEUDONYM_KEY_BYTES = 32
 TOKEN_LEN_CHARS = 12
+MAX_JSON_BODY_BYTES = 64 * 1024
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 DEFAULTS = {
     "item_count": 30,
@@ -83,7 +85,50 @@ def json_dumps(value):
 def parse_json(body):
     if not body:
         return {}
-    return json.loads(body.decode("utf-8"))
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError("Invalid JSON body.")
+    if not isinstance(payload, dict):
+        raise ValueError("JSON body must be an object.")
+    return payload
+
+
+class AuthenticationError(Exception):
+    """Missing or invalid credentials; never disclose enrollment details."""
+
+
+def secret_hash(value):
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def canonical_access_code(value):
+    if not isinstance(value, str):
+        raise AuthenticationError("Invalid credentials.")
+    code = re.sub(r"[\s-]", "", value).upper()
+    if not re.fullmatch(r"[A-Z2-7]{16}", code):
+        raise AuthenticationError("Invalid credentials.")
+    return code
+
+
+def make_access_code():
+    # Ten random bytes encode to sixteen base32 symbols: 80 bits of entropy.
+    code = base64.b32encode(secrets.token_bytes(10)).decode("ascii")
+    return "-".join(code[i:i + 4] for i in range(0, len(code), 4))
+
+
+def validate_privacy_notice_url(value):
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    parsed = urlparse(value)
+    if (
+        parsed.scheme not in {"http", "https"} or not parsed.hostname
+        or parsed.username or parsed.password
+        or any(ord(char) < 33 for char in value)
+    ):
+        raise ValueError("QUIZ_PRIVACY_NOTICE_URL must be an HTTP(S) URL.")
+    return value
 
 
 def make_session_code():
@@ -573,7 +618,12 @@ def _epoch_to_dt(epoch_ms):
     """
     if not epoch_ms:
         return ""
-    return datetime.fromtimestamp(epoch_ms / 1000).replace(microsecond=0)
+    try:
+        return datetime.fromtimestamp(epoch_ms / 1000).replace(microsecond=0)
+    except (OverflowError, OSError, TypeError, ValueError):
+        # Preserve export of grade evidence even when historical device-clock
+        # metadata contains a timestamp outside the datetime range.
+        return ""
 
 
 # ---------------------------------------------------------------------------
@@ -608,6 +658,12 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- Framework helpers --------------------------------------------------
 
+    def end_headers(self):
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        super().end_headers()
+
     def _send_json(self, status, payload, extra_headers=None):
         body = json_dumps(payload).encode("utf-8")
         self.send_response(status)
@@ -640,7 +696,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods",
                          "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers",
-                         "Content-Type, X-Admin-Key, X-Admin-Key-B64")
+                         "Content-Type, X-Admin-Key, X-Admin-Key-B64, X-Student-Token")
         self.send_header("Vary", "Origin")
 
     def log_message(self, fmt, *args):
@@ -650,9 +706,11 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         return parsed.path, parse_qs(parsed.query)
 
-    def _read_body(self):
+    def _read_body(self, max_bytes=MAX_JSON_BODY_BYTES):
         length = int(self.headers.get("Content-Length") or 0)
-        if length <= 0:
+        if length < 0 or length > max_bytes:
+            raise ValueError("Request body is too large or has an invalid length.")
+        if length == 0:
             return b""
         return self.rfile.read(length)
 
@@ -667,10 +725,9 @@ class Handler(BaseHTTPRequestHandler):
         if not m:
             raise ValueError("Expected multipart/form-data.")
         boundary = m.group(1).strip().strip('"')
-        length = int(self.headers.get("Content-Length") or 0)
-        if length <= 0:
+        data = self._read_body(MAX_UPLOAD_BYTES)
+        if not data:
             raise ValueError("Empty upload.")
-        data = self.rfile.read(length)
 
         delim = ("--" + boundary).encode()
         parts = data.split(delim)
@@ -716,10 +773,10 @@ class Handler(BaseHTTPRequestHandler):
         key = self._read_admin_key()
         expected = self.server.admin_key
         if not expected:
-            return True  # dev/open mode
+            return False
         if not key:
             return False
-        return hmac.compare_digest(key, expected)
+        return hmac.compare_digest(key.encode("utf-8"), expected.encode("utf-8"))
 
     def _require_admin(self):
         if not self._check_admin():
@@ -729,6 +786,31 @@ class Handler(BaseHTTPRequestHandler):
 
     def _conn(self):
         return self.server.get_conn()
+
+    def _authenticated_student(self, payload=None):
+        # URL query strings are deliberately never a credential source.
+        bearer = self.headers.get("X-Student-Token", "").strip()
+        if not bearer and payload is not None:
+            bearer = payload.get("student_token") or ""
+        if not isinstance(bearer, str) or not bearer or len(bearer) > 256:
+            raise AuthenticationError("Invalid student credentials.")
+        student = self._conn().execute(
+            "SELECT * FROM quiz_student WHERE auth_token_hash = ?",
+            (secret_hash(bearer),),
+        ).fetchone()
+        if not student:
+            raise AuthenticationError("Invalid student credentials.")
+        return student
+
+    def _owned_attempt(self, student, attempt_id):
+        attempt = self._conn().execute(
+            "SELECT * FROM quiz_attempt WHERE id = ? AND session_id = ? "
+            "AND student_token = ?",
+            (attempt_id, student["session_id"], student["student_token"]),
+        ).fetchone()
+        if not attempt:
+            raise PermissionError("Attempt does not belong to this student.")
+        return attempt
 
     def _try_serve_static(self, path):
         if path in ("", "/"):
@@ -774,6 +856,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/quiz/health":
                 return self._send_json(200, {"ok": True})
+            if path == "/quiz/config":
+                return self._send_json(200, {
+                    "privacy_notice_url": self.server.privacy_notice_url,
+                })
             # Static frontend — only when a frontend dir is configured.
             if self.server.frontend_dir and not path.startswith("/quiz/"):
                 served = self._try_serve_static(path)
@@ -808,6 +894,10 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 return self._handle_qr(qs)
             return self._send_error(404, "Not found.")
+        except AuthenticationError as exc:
+            return self._send_error(401, str(exc))
+        except PermissionError as exc:
+            return self._send_error(403, str(exc))
         except ValueError as exc:
             return self._send_error(400, str(exc))
         except Exception as exc:
@@ -816,6 +906,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path, _qs = self._parse_path()
         try:
+            if path.startswith("/quiz/admin/") and not self._require_admin():
+                return
             if path == "/quiz/admin/bank/upload":
                 if not self._require_admin():
                     return
@@ -834,6 +926,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._require_admin():
                     return
                 return self._handle_session_create(payload)
+            if path == "/quiz/admin/session/access-codes":
+                return self._handle_access_codes(payload)
             if path == "/quiz/admin/session/start":
                 if not self._require_admin():
                     return
@@ -843,6 +937,10 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 return self._handle_session_close(payload)
             return self._send_error(404, "Not found.")
+        except AuthenticationError as exc:
+            return self._send_error(401, str(exc))
+        except PermissionError as exc:
+            return self._send_error(403, str(exc))
         except ValueError as exc:
             return self._send_error(400, str(exc))
         except Exception as exc:
@@ -1151,11 +1249,56 @@ class Handler(BaseHTTPRequestHandler):
         row = session_by_id(conn, session_id)
         if not row:
             return self._send_error(404, "Session not found.")
-        with conn:
+        with SESSION_LOCKS.get(session_id), conn:
             conn.execute("DELETE FROM quiz_attempt WHERE session_id = ?", (session_id,))
             conn.execute("DELETE FROM quiz_student WHERE session_id = ?", (session_id,))
             conn.execute("DELETE FROM quiz_session WHERE id = ?", (session_id,))
         return self._send_json(200, {"ok": True})
+
+    def _handle_access_codes(self, payload):
+        session_id = payload.get("session_id")
+        if not isinstance(session_id, str) or not session_id.strip():
+            raise ValueError("session_id is required.")
+        session_id = session_id.strip()
+        values = payload.get("student_numbers")
+        if not isinstance(values, list) or not 1 <= len(values) <= 1000:
+            raise ValueError("student_numbers must contain 1–1000 student numbers.")
+        replace = payload.get("replace", False)
+        if not isinstance(replace, bool):
+            raise ValueError("replace must be true or false.")
+        # Validate every value before starting any writes. Repeated normalized
+        # numbers represent the same student and receive just one credential.
+        numbers = list(dict.fromkeys(normalize_student_number(v) for v in values))
+        conn = self._conn()
+        credentials, skipped = [], []
+        lock = SESSION_LOCKS.get(session_id)
+        with lock, conn:
+            if not session_by_id(conn, session_id):
+                return self._send_error(404, "Session not found.")
+            for number in numbers:
+                existing = conn.execute(
+                    "SELECT 1 FROM quiz_credential WHERE session_id = ? "
+                    "AND student_number = ?", (session_id, number),
+                ).fetchone()
+                if existing and not replace:
+                    skipped.append(number)
+                    continue
+                access_code = make_access_code()
+                conn.execute(
+                    "INSERT INTO quiz_credential "
+                    "(session_id, student_number, access_code_hash) VALUES (?, ?, ?) "
+                    "ON CONFLICT(session_id, student_number) DO UPDATE SET "
+                    "access_code_hash = excluded.access_code_hash",
+                    (session_id, number, secret_hash(canonical_access_code(access_code))),
+                )
+                # Reissuing access also invalidates any previously issued bearer.
+                conn.execute(
+                    "UPDATE quiz_student SET auth_token_hash = NULL "
+                    "WHERE session_id = ? AND student_number = ?",
+                    (session_id, number),
+                )
+                credentials.append({"student_number": number, "access_code": access_code})
+        return self._send_json(200, {"credentials": credentials, "skipped": skipped})
 
     def _handle_session_list(self):
         conn = self._conn()
@@ -1243,31 +1386,59 @@ class Handler(BaseHTTPRequestHandler):
     # -- Student: join / next / answer / blur / live_status ----------------
 
     def _handle_join(self, payload):
-        code = (payload.get("code") or "").strip().upper()
-        if not code:
-            raise ValueError("code is required.")
-        student_number = normalize_student_number(payload.get("student_number") or "")
-
+        try:
+            code = payload.get("code")
+            if not isinstance(code, str) or not code.strip():
+                raise AuthenticationError("Invalid credentials.")
+            code = code.strip().upper()
+            student_number = normalize_student_number(payload.get("student_number") or "")
+            access_code = canonical_access_code(payload.get("access_code"))
+        except ValueError:
+            raise AuthenticationError("Invalid credentials.")
         conn = self._conn()
         row = session_by_code(conn, code)
         if not row:
-            raise ValueError("Unknown session code.")
-        if row["status"] == "closed":
-            raise ValueError("This session has ended.")
-
-        token = derive_student_token(row["pseudonym_key"], student_number)
-        existing = student_row(conn, row["id"], token)
-        if not existing:
-            with conn:
+            raise AuthenticationError("Invalid credentials.")
+        lock = SESSION_LOCKS.get(row["id"])
+        with lock, conn:
+            row = session_by_id(conn, row["id"])
+            if not row:
+                raise AuthenticationError("Invalid credentials.")
+            credential = conn.execute(
+                "SELECT access_code_hash FROM quiz_credential "
+                "WHERE session_id = ? AND student_number = ?",
+                (row["id"], student_number),
+            ).fetchone()
+            if not credential or not hmac.compare_digest(
+                credential["access_code_hash"], secret_hash(access_code)
+            ):
+                raise AuthenticationError("Invalid credentials.")
+            if row["status"] == "closed":
+                raise ValueError("This session has ended.")
+            existing = conn.execute(
+                "SELECT * FROM quiz_student WHERE session_id = ? AND student_number = ?",
+                (row["id"], student_number),
+            ).fetchone()
+            token = existing["student_token"] if existing else derive_student_token(
+                row["pseudonym_key"], student_number
+            )
+            bearer = secrets.token_urlsafe(32)
+            if existing:
+                conn.execute(
+                    "UPDATE quiz_student SET auth_token_hash = ? "
+                    "WHERE session_id = ? AND student_token = ?",
+                    (secret_hash(bearer), row["id"], token),
+                )
+            else:
                 conn.execute(
                     """INSERT INTO quiz_student
-                         (session_id, student_token, student_number, joined_at)
-                       VALUES (?, ?, ?, ?)""",
-                    (row["id"], token, student_number, now_ms()),
+                         (session_id, student_token, student_number, joined_at, auth_token_hash)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (row["id"], token, student_number, now_ms(), secret_hash(bearer)),
                 )
 
         return self._send_json(200, {
-            "student_token": token,
+            "student_token": bearer,
             "session_id": row["id"],
             "join_code": row["join_code"],
             "status": row["status"],
@@ -1281,42 +1452,31 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def _handle_live_status(self, qs):
-        token = (qs.get("student_token", [""])[0] or "").strip()
-        if not token:
-            raise ValueError("student_token is required.")
+        student = self._authenticated_student()
         conn = self._conn()
-        s = conn.execute(
-            """SELECT st.*, qs.status AS session_status, qs.display_name,
-                      qs.item_count, qs.started_at, qs.duration_minutes,
-                      qs.security_mode
-                 FROM quiz_student st
-                 JOIN quiz_session qs ON qs.id = st.session_id
-                WHERE st.student_token = ?""",
-            (token,),
-        ).fetchone()
-        if not s:
-            raise ValueError("Unknown student token.")
-        payload = {
-            "status": s["session_status"],
-            "display_name": s["display_name"],
-            "item_count": s["item_count"],
-            "security_mode": s["security_mode"],
-            "ended": bool(s["ended_at"]),
-            "end_reason": s["end_reason"],
-        }
-        if s["started_at"]:
-            payload["remaining_ms"] = max(
-                0,
-                s["started_at"] + s["duration_minutes"] * 60_000 - now_ms(),
-            )
+        with SESSION_LOCKS.get(student["session_id"]):
+            student = self._authenticated_student()
+            session = session_by_id(conn, student["session_id"])
+            if not session:
+                raise AuthenticationError("Invalid student credentials.")
+            payload = {
+                "status": session["status"],
+                "display_name": session["display_name"],
+                "item_count": session["item_count"],
+                "security_mode": session["security_mode"],
+                "ended": bool(student["ended_at"]),
+                "end_reason": student["end_reason"],
+            }
+            if session["started_at"]:
+                payload["remaining_ms"] = max(
+                    0, session["started_at"] + session["duration_minutes"] * 60_000 - now_ms(),
+                )
         return self._send_json(200, payload)
 
     def _handle_incident(self, payload):
-        token = (payload.get("student_token") or "").strip()
+        student = self._authenticated_student(payload)
         attempt_id = (payload.get("attempt_id") or "").strip() or None
         event_type = (payload.get("event_type") or "").strip().lower()
-        if not token:
-            raise ValueError("student_token is required.")
         if not event_type:
             raise ValueError("event_type is required.")
         if not re.match(r"^[a-z0-9_:-]{1,64}$", event_type):
@@ -1330,31 +1490,28 @@ class Handler(BaseHTTPRequestHandler):
                 client_ts = int(client_ts)
             except (TypeError, ValueError):
                 raise ValueError("client_ts must be an integer epoch ms.")
+            # The device clock is advisory. Keep the server timestamp even if
+            # a broken/malicious client supplies an unexportable date.
+            if client_ts < 0 or client_ts > now_ms() + 86_400_000:
+                client_ts = None
 
         metadata = payload.get("metadata") or {}
         if not isinstance(metadata, dict):
             raise ValueError("metadata must be an object.")
-        metadata_json = json_dumps(metadata)
-        if len(metadata_json.encode("utf-8")) > 4096:
-            raise ValueError("metadata is too large.")
+        # Retain only the minimum state needed to explain a focus/fullscreen
+        # event. Never retain user-agent, display dimensions or arbitrary fields.
+        metadata_json = json_dumps({
+            key: metadata[key] for key in ("hidden", "fullscreen")
+            if isinstance(metadata.get(key), bool)
+        })
 
         conn = self._conn()
-        if attempt_id:
-            attempt = conn.execute(
-                "SELECT * FROM quiz_attempt WHERE id = ?", (attempt_id,)
-            ).fetchone()
-            if not attempt:
-                raise ValueError("Unknown attempt.")
-            if attempt["student_token"] != token:
-                raise ValueError("Attempt does not belong to this student.")
-            session_id = attempt["session_id"]
-        else:
-            student = student_row_by_token(conn, token)
-            if not student:
-                raise ValueError("Unknown student token.")
+        with SESSION_LOCKS.get(student["session_id"]), conn:
+            student = self._authenticated_student(payload)
             session_id = student["session_id"]
-
-        with conn:
+            token = student["student_token"]
+            if attempt_id:
+                self._owned_attempt(student, attempt_id)
             conn.execute(
                 """INSERT INTO quiz_incident
                      (id, session_id, student_token, attempt_id, event_type,
@@ -1368,46 +1525,34 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(201, {"ok": True})
 
     def _handle_next(self, qs):
-        token = (qs.get("student_token", [""])[0] or "").strip()
-        if not token:
-            raise ValueError("student_token is required.")
+        s = self._authenticated_student()
         conn = self._conn()
-        s = student_row_by_token(conn, token)
-        if not s:
-            raise ValueError("Unknown student token.")
-        session_row = session_by_id(conn, s["session_id"])
-        if not session_row:
-            return self._send_error(404, "Session not found.")
-
-        # Already ended?
-        if s["ended_at"]:
-            return self._send_json(200, _ended_payload(
-                conn, session_row, s, s["end_reason"]
-            ))
-
-        # If session not live, nothing to serve.
-        if session_row["status"] == "lobby":
-            return self._send_json(200, {"session_status": "lobby"})
-        if session_row["status"] == "closed":
-            with conn:
-                end_student(conn, session_row["id"], token, "instructor_closed")
-            s = student_row_by_token(conn, token)
-            return self._send_json(200, _ended_payload(
-                conn, session_row, s, s["end_reason"] or "instructor_closed"
-            ))
-
-        lock = SESSION_LOCKS.get(session_row["id"])
+        lock = SESSION_LOCKS.get(s["session_id"])
         with lock, conn:
-            # Re-read student inside the lock to catch races.
-            s = student_row_by_token(conn, token)
+            # Authenticate again under the session lock so a concurrent rejoin
+            # or code replacement cannot leave a revoked bearer authorized.
+            s = self._authenticated_student()
+            token = s["student_token"]
             session_row = session_by_id(conn, s["session_id"])
+            if not session_row:
+                raise AuthenticationError("Invalid student credentials.")
+            if s["ended_at"]:
+                return self._send_json(200, _ended_payload(
+                    conn, session_row, s, s["end_reason"]
+                ))
+            if session_row["status"] == "closed":
+                end_student(conn, session_row["id"], token, "instructor_closed")
+                s = student_row(conn, session_row["id"], token)
+                return self._send_json(200, _ended_payload(
+                    conn, session_row, s, s["end_reason"] or "instructor_closed"
+                ))
 
             if session_row["status"] == "lobby":
                 return self._send_json(200, {"session_status": "lobby"})
 
             reason = ending_reason_for_student(conn, session_row, s)
             if reason:
-                s = student_row_by_token(conn, token)
+                s = student_row(conn, session_row["id"], token)
                 return self._send_json(200, _ended_payload(
                     conn, session_row, s, reason
                 ))
@@ -1434,7 +1579,7 @@ class Handler(BaseHTTPRequestHandler):
             answered = count_answered(conn, session_row["id"], token)
             if answered >= session_row["item_count"]:
                 end_student(conn, session_row["id"], token, "completed")
-                s = student_row_by_token(conn, token)
+                s = student_row(conn, session_row["id"], token)
                 return self._send_json(200, _ended_payload(
                     conn, session_row, s, "completed"
                 ))
@@ -1442,7 +1587,7 @@ class Handler(BaseHTTPRequestHandler):
             item, reason = pick_next_item(conn, session_row, token)
             if not item:
                 end_student(conn, session_row["id"], token, reason or "exhausted")
-                s = student_row_by_token(conn, token)
+                s = student_row(conn, session_row["id"], token)
                 return self._send_json(200, _ended_payload(
                     conn, session_row, s, reason or "exhausted"
                 ))
@@ -1457,6 +1602,7 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def _handle_answer(self, payload):
+        student = self._authenticated_student(payload)
         attempt_id = (payload.get("attempt_id") or "").strip()
         if not attempt_id:
             raise ValueError("attempt_id is required.")
@@ -1466,18 +1612,10 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("chosen_visible_index must be an integer.")
 
         conn = self._conn()
-        row = conn.execute(
-            "SELECT * FROM quiz_attempt WHERE id = ?", (attempt_id,)
-        ).fetchone()
-        if not row:
-            raise ValueError("Unknown attempt.")
-        lock = SESSION_LOCKS.get(row["session_id"])
+        lock = SESSION_LOCKS.get(student["session_id"])
         with lock, conn:
-            row = conn.execute(
-                "SELECT * FROM quiz_attempt WHERE id = ?", (attempt_id,)
-            ).fetchone()
-            if not row:
-                raise ValueError("Unknown attempt.")
+            student = self._authenticated_student(payload)
+            row = self._owned_attempt(student, attempt_id)
             if row["submitted_at"] is not None:
                 raise ValueError("Attempt already submitted.")
             if row["swapped"]:
@@ -1486,9 +1624,6 @@ class Handler(BaseHTTPRequestHandler):
             session_row = session_by_id(conn, row["session_id"])
             if not session_row:
                 return self._send_error(404, "Session not found.")
-            student = student_row(conn, row["session_id"], row["student_token"])
-            if not student:
-                raise ValueError("Unknown student token.")
             if session_row["status"] == "lobby":
                 return self._send_json(
                     409,
@@ -1536,25 +1671,23 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(200, payload_out)
 
     def _handle_blur(self, payload):
+        student = self._authenticated_student(payload)
         attempt_id = (payload.get("attempt_id") or "").strip()
         if not attempt_id:
             raise ValueError("attempt_id is required.")
         conn = self._conn()
-        row = conn.execute(
-            "SELECT * FROM quiz_attempt WHERE id = ?", (attempt_id,)
-        ).fetchone()
-        if not row:
-            raise ValueError("Unknown attempt.")
-        if row["submitted_at"] is not None:
-            # Already submitted — blur is moot.
-            return self._send_json(200, {"swapped": False, "submitted": True})
-        if row["swapped"]:
-            return self._send_json(200, {"swapped": True})
-
-        session_row = session_by_id(conn, row["session_id"])
-        token = row["student_token"]
-        lock = SESSION_LOCKS.get(row["session_id"])
+        lock = SESSION_LOCKS.get(student["session_id"])
         with lock, conn:
+            student = self._authenticated_student(payload)
+            row = self._owned_attempt(student, attempt_id)
+            if row["submitted_at"] is not None:
+                return self._send_json(200, {"swapped": False, "submitted": True})
+            if row["swapped"]:
+                return self._send_json(200, {"swapped": True})
+            session_row = session_by_id(conn, student["session_id"])
+            if not session_row:
+                raise AuthenticationError("Invalid student credentials.")
+            token = student["student_token"]
             # Symmetric guard: if /quiz/answer committed between the read
             # above and this UPDATE, do nothing — the student earned that
             # answer, and a stray blur from the same client should not
@@ -1582,12 +1715,6 @@ class Handler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 # Helpers used by handlers
 # ---------------------------------------------------------------------------
-
-
-def student_row_by_token(conn, token):
-    return conn.execute(
-        "SELECT * FROM quiz_student WHERE student_token = ?", (token,)
-    ).fetchone()
 
 
 def _session_public(row):
@@ -1676,7 +1803,8 @@ def resolve_db_path(root, cli_db):
 
 class QuizServer(ThreadingHTTPServer):
     def __init__(self, address, handler, db_path, admin_key, allowed_origin,
-                 banks_dir, public_base_url, frontend_dir):
+                 banks_dir, public_base_url, frontend_dir, privacy_notice_url=""):
+        privacy_notice_url = validate_privacy_notice_url(privacy_notice_url)
         super().__init__(address, handler)
         self.db_path = db_path
         self.admin_key = admin_key
@@ -1684,6 +1812,7 @@ class QuizServer(ThreadingHTTPServer):
         self.banks_dir = banks_dir
         self.public_base_url = public_base_url.rstrip("/")
         self.frontend_dir = frontend_dir
+        self.privacy_notice_url = privacy_notice_url
         self._conn_lock = threading.Lock()
         self._thread_conns = {}
 
@@ -1708,6 +1837,16 @@ def main():
     parser.add_argument("--db", default=None)
     args = parser.parse_args()
 
+    admin_key = os.environ.get("QUIZ_ADMIN_KEY", "").strip()
+    if not admin_key:
+        parser.error("QUIZ_ADMIN_KEY must be set; refusing to start without admin protection.")
+    try:
+        privacy_notice_url = validate_privacy_notice_url(
+            os.environ.get("QUIZ_PRIVACY_NOTICE_URL", "")
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+
     root = Path(__file__).parent.resolve()
     db_path = resolve_db_path(root, args.db)
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -1715,7 +1854,6 @@ def main():
     banks_dir = root / "banks"
     banks_dir.mkdir(parents=True, exist_ok=True)
 
-    admin_key = os.environ.get("QUIZ_ADMIN_KEY", "").strip()
     allowed_origin = os.environ.get("QUIZ_ALLOWED_ORIGIN", "").strip() or None
     public_base_url = os.environ.get("QUIZ_PUBLIC_URL", "").strip()
 
@@ -1734,15 +1872,12 @@ def main():
 
     server = QuizServer(
         (args.host, args.port), Handler, str(db_path), admin_key, allowed_origin,
-        banks_dir, public_base_url, frontend_dir,
+        banks_dir, public_base_url, frontend_dir, privacy_notice_url,
     )
     print(f"[quiz] listening on {args.host}:{args.port}")
     print(f"[quiz] db: {db_path}")
     print(f"[quiz] banks: {banks_dir}")
-    if admin_key:
-        print("[quiz] admin key is set (X-Admin-Key or X-Admin-Key-B64 header)")
-    else:
-        print("[quiz] WARNING: no admin key set (dev mode, all admin routes open)")
+    print("[quiz] admin key is set (X-Admin-Key or X-Admin-Key-B64 header)")
     if public_base_url:
         print(f"[quiz] public QR base URL: {public_base_url}")
     if frontend_dir:

@@ -1,7 +1,8 @@
 (function () {
   const { publicApi, escapeHtml, toast, fmtTimer, API_BASE } = window.QuizShared;
 
-  const STORAGE_KEY = "session-quiz-student-v1";
+  const LEGACY_STORAGE_KEY = "session-quiz-student-v1";
+  const STORAGE_KEY = "session-quiz-student-v2";
   const FEEDBACK_KEY = "session-quiz-last-feedback-v1";
   const LOST_FOCUS_KEY = "session-quiz-lost-focus-v1";
   const STRICT_RESIZE_RATIO = 0.85;
@@ -22,7 +23,10 @@
     loginForm: document.getElementById("login-form"),
     loginCode: document.getElementById("login-code"),
     loginStudent: document.getElementById("login-student-number"),
+    loginAccessCode: document.getElementById("login-access-code"),
     loginError: document.getElementById("login-error"),
+    privacyNoticeRow: document.getElementById("privacy-notice-row"),
+    privacyNoticeLink: document.getElementById("privacy-notice-link"),
     lobbyRules: document.getElementById("lobby-rules"),
     quizProgress: document.getElementById("quiz-progress"),
     quizTimer: document.getElementById("quiz-timer"),
@@ -40,6 +44,7 @@
     endReset: document.getElementById("end-reset"),
   };
 
+  clearLegacyStorage();
   let state = loadState() || {
     token: null,
     sessionId: null,
@@ -63,9 +68,16 @@
 
   // --- Storage --------------------------------------------------------------
 
+  function clearLegacyStorage() {
+    [LEGACY_STORAGE_KEY, STORAGE_KEY, FEEDBACK_KEY, LOST_FOCUS_KEY].forEach((key) => {
+      try { window.localStorage.removeItem(key); } catch (_) { /* storage may be unavailable */ }
+    });
+    try { window.sessionStorage.removeItem(LEGACY_STORAGE_KEY); } catch (_) { /* ignore */ }
+  }
+
   function loadState() {
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const raw = window.sessionStorage.getItem(STORAGE_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch (_) {
       return null;
@@ -74,12 +86,12 @@
 
   function saveState() {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      if (state.token) window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (_) { /* ignore */ }
   }
 
   function clearState() {
-    try { window.localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+    try { window.sessionStorage.removeItem(STORAGE_KEY); } catch (_) {}
     clearFeedbackState();
     clearLostFocusState();
     state = { token: null, sessionId: null, joinCode: null, displayName: null,
@@ -88,13 +100,13 @@
   }
 
   function clearFeedbackState() {
-    try { window.localStorage.removeItem(FEEDBACK_KEY); } catch (_) {}
+    try { window.sessionStorage.removeItem(FEEDBACK_KEY); } catch (_) {}
   }
 
   function saveLostFocusState(attemptId) {
     if (!attemptId || !state.token) return;
     try {
-      window.localStorage.setItem(LOST_FOCUS_KEY, JSON.stringify({
+      window.sessionStorage.setItem(LOST_FOCUS_KEY, JSON.stringify({
         attemptId,
         token: state.token,
         at: Date.now(),
@@ -104,7 +116,7 @@
 
   function loadLostFocusState() {
     try {
-      const raw = window.localStorage.getItem(LOST_FOCUS_KEY);
+      const raw = window.sessionStorage.getItem(LOST_FOCUS_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch (_) {
       return null;
@@ -114,12 +126,58 @@
   function clearLostFocusState(attemptId) {
     const marker = loadLostFocusState();
     if (attemptId && marker && marker.attemptId !== attemptId) return;
-    try { window.localStorage.removeItem(LOST_FOCUS_KEY); } catch (_) {}
+    try { window.sessionStorage.removeItem(LOST_FOCUS_KEY); } catch (_) {}
   }
 
   function hasLostFocusForAttempt(attemptId) {
     const marker = loadLostFocusState();
     return !!(marker && marker.token === state.token && marker.attemptId === attemptId);
+  }
+
+  function handleUnauthorized(error, token = state.token) {
+    if (!error || error.status !== 401) return false;
+    if (token !== state.token) return true;
+    stopTimer();
+    stopLobbyPoll();
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = null;
+    currentAttempt = null;
+    hardEnded = true;
+    clearState();
+    els.loginAccessCode.value = "";
+    els.sessionName.textContent = "";
+    els.loginError.textContent =
+      "Достъпът до теста е невалиден или изтекъл. Получете личен код за тази сесия от преподавателя и влезте отново.";
+    els.loginError.hidden = false;
+    show("login");
+    return true;
+  }
+
+  async function studentApi(path, options = {}) {
+    const token = state.token;
+    try {
+      const payload = await publicApi(path, { ...options, studentToken: token });
+      if (token !== state.token) {
+        const error = new Error("Достъпът до тази сесия вече не е активен.");
+        error.status = 401;
+        throw error;
+      }
+      return payload;
+    } catch (error) {
+      handleUnauthorized(error, token);
+      throw error;
+    }
+  }
+
+  async function loadPrivacyNotice() {
+    try {
+      const config = await publicApi("/quiz/config");
+      if (!config.privacy_notice_url) return;
+      const url = new URL(config.privacy_notice_url);
+      if (url.protocol !== "https:" && url.protocol !== "http:") return;
+      els.privacyNoticeLink.href = url.href;
+      els.privacyNoticeRow.hidden = false;
+    } catch (_) { /* The factual summary remains visible without a configured notice. */ }
   }
 
   // --- Card switching -------------------------------------------------------
@@ -135,6 +193,7 @@
   // --- Init -----------------------------------------------------------------
 
   function init() {
+    loadPrivacyNotice();
     const url = new URL(window.location.href);
     const codeFromUrl = (url.searchParams.get("code") || "").toUpperCase();
     if (codeFromUrl) {
@@ -150,7 +209,8 @@
     } else if (state && state.token) {
       // Resume — try to fetch live status; on failure fall back to login.
       els.sessionName.textContent = state.displayName || "";
-      resumeSession().catch(() => {
+      resumeSession().catch((error) => {
+        if (error.status === 401) return;
         clearState();
         show("login");
       });
@@ -172,6 +232,7 @@
       hardEnded = false;
       els.loginCode.value = "";
       els.loginStudent.value = "";
+      els.loginAccessCode.value = "";
       els.loginError.hidden = true;
       els.sessionName.textContent = "";
       show("login");
@@ -202,9 +263,7 @@
     // Replaying cached feedback here can make a completed question look like
     // the current question has its correct answer pre-marked.
     clearFeedbackState();
-    const status = await publicApi(
-      `/quiz/live_status?student_token=${encodeURIComponent(state.token)}`
-    );
+    const status = await studentApi("/quiz/live_status");
     state.securityMode = status.security_mode || state.securityMode || "standard";
     saveState();
     if (status.ended) {
@@ -241,12 +300,17 @@
     els.loginError.hidden = true;
     const code = els.loginCode.value.trim().toUpperCase();
     const studentNumber = els.loginStudent.value.trim();
-    if (!code || !studentNumber) return;
+    const accessCode = els.loginAccessCode.value.trim();
+    if (!code || !studentNumber || !accessCode) return;
+    els.loginAccessCode.value = "";
     try {
       const result = await publicApi("/quiz/join", {
         method: "POST",
-        body: { code, student_number: studentNumber },
+        body: { code, student_number: studentNumber, access_code: accessCode },
       });
+      hardEnded = false;
+      fullscreenEverEntered = false;
+      currentAttempt = null;
       state = {
         token: result.student_token,
         sessionId: result.session_id,
@@ -271,7 +335,9 @@
         startLobbyPoll();
       }
     } catch (err) {
-      els.loginError.textContent = err.message || "Грешка при влизане.";
+      els.loginError.textContent = err.status === 401
+        ? "Невалиден личен код. Получете личен код за тази сесия от преподавателя."
+        : (err.message || "Грешка при влизане.");
       els.loginError.hidden = false;
     }
   }
@@ -282,9 +348,7 @@
     stopLobbyPoll();
     lobbyPollTimer = setInterval(async () => {
       try {
-        const s = await publicApi(
-          `/quiz/live_status?student_token=${encodeURIComponent(state.token)}`
-        );
+        const s = await studentApi("/quiz/live_status");
         if (s.ended) {
           showEnd({ reason: s.end_reason, score: null });
         } else if (s.status === "live") {
@@ -388,7 +452,7 @@
   }
 
   async function fetchNext() {
-    if (hardEnded) return;
+    if (hardEnded || !state.token) return;
     const marker = loadLostFocusState();
     if (marker && marker.token === state.token) {
       if (document.hidden) return;
@@ -400,9 +464,7 @@
     if (inFlight) return;
     inFlight = (async () => {
       try {
-        const data = await publicApi(
-          `/quiz/next?student_token=${encodeURIComponent(state.token)}`
-        );
+        const data = await studentApi("/quiz/next");
         if (data.session_status === "lobby") {
           show("lobby");
           startLobbyPoll();
@@ -418,6 +480,7 @@
         }
         renderAttempt(data);
       } catch (err) {
+        if (err.status === 401) return;
         toast(err.message || "Грешка при зареждане на въпроса.", "error");
       }
     })();
@@ -481,7 +544,7 @@
     const visibleIndex = Number(selected.dataset.idx);
     els.quizSubmit.disabled = true;
     try {
-      const result = await publicApi("/quiz/answer", {
+      const result = await studentApi("/quiz/answer", {
         method: "POST",
         body: { attempt_id: currentAttempt.id,
                 chosen_visible_index: visibleIndex },
@@ -498,6 +561,7 @@
         setTimeout(fetchNext, 200);
       }
     } catch (err) {
+      if (err.status === 401) return;
       els.quizSubmit.disabled = false;
       toast(err.message || "Грешка при изпращане на отговора.", "error");
     }
@@ -575,14 +639,8 @@
 
   function incidentMetadata(extra = {}) {
     return {
-      innerWidth: window.innerWidth,
-      innerHeight: window.innerHeight,
-      screenWidth: window.screen ? window.screen.width : null,
-      screenHeight: window.screen ? window.screen.height : null,
-      hidden: document.hidden,
+      hidden: typeof extra.hidden === "boolean" ? extra.hidden : document.hidden,
       fullscreen: isFullscreenActive(),
-      userAgent: navigator.userAgent,
-      ...extra,
     };
   }
 
@@ -609,11 +667,14 @@
 
   function logIncident(eventType, attemptId, metadata = {}) {
     if (!isStrictMode() || !state.token) return;
+    const token = state.token;
     fetch(apiUrl("/quiz/incident"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Student-Token": token },
       body: JSON.stringify(incidentPayload(eventType, attemptId, metadata)),
       keepalive: true,
+    }).then((response) => {
+      if (response.status === 401) handleUnauthorized({ status: 401 }, token);
     }).catch(() => { /* incident logging should not block the quiz flow */ });
   }
 
@@ -643,9 +704,9 @@
   }
 
   function sendBlurBeacon(attemptId) {
-    if (!navigator.sendBeacon) return false;
+    if (!state.token || !navigator.sendBeacon) return false;
     try {
-      const body = JSON.stringify({ attempt_id: attemptId });
+      const body = JSON.stringify({ attempt_id: attemptId, student_token: state.token });
       const blob = new Blob([body], { type: "application/json" });
       return navigator.sendBeacon(apiUrl("/quiz/blur"), blob);
     } catch (_) {
@@ -654,15 +715,24 @@
   }
 
   async function postBlur(attemptId) {
+    const token = state.token;
     const response = await fetch(apiUrl("/quiz/blur"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Student-Token": token },
       body: JSON.stringify({ attempt_id: attemptId }),
       keepalive: true,
     });
     const payload = await response.json().catch(() => ({}));
+    if (token !== state.token) {
+      const error = new Error("Достъпът до тази сесия вече не е активен.");
+      error.status = 401;
+      throw error;
+    }
     if (!response.ok) {
-      throw new Error(payload.error || `Request failed with status ${response.status}`);
+      const error = new Error(payload.error || `Request failed with status ${response.status}`);
+      error.status = response.status;
+      handleUnauthorized(error, token);
+      throw error;
     }
     return payload;
   }
@@ -683,7 +753,8 @@
     try {
       const result = await postBlur(marker.attemptId);
       return handleBlurResult(result, marker.attemptId);
-    } catch (_) {
+    } catch (error) {
+      if (error.status === 401) return true;
       return null;
     }
   }
@@ -729,7 +800,8 @@
         if (document.hidden) return;
         fetchNext();
       })
-      .catch(() => {
+      .catch((error) => {
+        if (error.status === 401) return;
         // Keep the local lost-focus marker. Submission is blocked until the
         // client can resolve it on focus or before the next answer.
         blurSent = false;
@@ -793,10 +865,7 @@
     const widthRatio = Math.max(window.innerWidth / sw, window.innerWidth / sh);
     const heightRatio = Math.max(window.innerHeight / sw, window.innerHeight / sh);
     if (widthRatio < STRICT_RESIZE_RATIO || heightRatio < STRICT_RESIZE_RATIO) {
-      onFocusLost("suspicious_resize", {
-        widthRatio: Math.round(widthRatio * 1000) / 1000,
-        heightRatio: Math.round(heightRatio * 1000) / 1000,
-      });
+      onFocusLost("suspicious_resize");
       showFullscreenGate("Размерът на прозореца се промени. Влезте отново в цял екран.");
     }
   }
@@ -806,8 +875,11 @@
   function showEnd(data) {
     stopTimer();
     stopLobbyPoll();
-    clearFeedbackState();
-    clearLostFocusState();
+    hardEnded = true;
+    currentAttempt = null;
+    clearState();
+    els.loginStudent.value = "";
+    els.loginAccessCode.value = "";
     show("end");
     const reason = data.reason || "completed";
     const score = data.score;

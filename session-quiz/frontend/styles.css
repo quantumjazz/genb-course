@@ -146,6 +146,9 @@ textarea { min-height: 5rem; resize: vertical; }
 .badge.danger { background: rgba(139, 46, 37, 0.14); color: var(--danger); }
 
 .hint, .empty, .muted-text { color: var(--muted); line-height: 1.45; font-size: 0.95rem; }
+.data-use-summary { margin-top: 1rem; padding-top: 0.2rem; border-top: 1px solid var(--line); }
+.data-use-summary p { margin: 0.65rem 0; }
+.data-use-summary a { color: var(--accent); text-decoration: underline; }
 
 .table { width: 100%; border-collapse: collapse; }
 .table th, .table td {

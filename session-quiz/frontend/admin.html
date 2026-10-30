@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Session Quiz — Instructor Console</title>
-  <link rel="stylesheet" href="styles.css?v=20260506.2" />
+  <link rel="stylesheet" href="styles.css?v=20261030.1" />
 </head>
 <body>
   <main class="shell wide">
@@ -21,12 +21,13 @@
         <h2>Админ ключ</h2>
         <label>
           <span>Ключ</span>
-          <input id="admin-key-input" type="password" autocomplete="current-password" />
+          <input id="admin-key-input" type="password" autocomplete="off" />
         </label>
+        <p class="hint">Ключът остава само в паметта на тази страница. При презареждане го въведете отново.</p>
         <div class="actions compact">
           <button id="admin-key-cancel" class="button" type="button">Отказ</button>
-          <button id="admin-key-clear" class="button danger" type="button">Изчисти</button>
-          <button class="button primary" type="submit">Запази</button>
+          <button id="admin-key-clear" class="button danger" type="button">Заключи</button>
+          <button class="button primary" type="submit">Отключи</button>
         </div>
       </form>
     </dialog>
@@ -35,6 +36,7 @@
       <button class="tab-btn current" data-tab="sessions" type="button">Сесии</button>
       <button class="tab-btn" data-tab="banks" type="button">Банки въпроси</button>
     </nav>
+    <p class="hint" id="privacy-notice-warning" role="status" hidden></p>
 
     <!-- ============ SESSIONS TAB ============ -->
     <section id="tab-sessions">
@@ -60,6 +62,35 @@
           <img id="live-qr" class="qr-img" alt="QR" />
         </div>
 
+        <details id="access-codes-panel" style="margin-top: 1rem;">
+          <summary>Лични кодове за вход — само за преподавателя</summary>
+          <p class="hint">Раздайте всеки код лично или чрез индивидуално съобщение в Moodle. Не прожектирайте и не споделяйте целия списък. Общият код на сесията не замества личния код.</p>
+          <form id="access-codes-form">
+            <label>
+              <span>Факултетни номера — по един на ред</span>
+              <textarea id="access-codes-roster" rows="5" autocomplete="off" spellcheck="false" required></textarea>
+            </label>
+            <label class="row compact" style="margin-top: 0.6rem;">
+              <input id="access-codes-replace" type="checkbox" style="width: auto; flex: 0 0 auto;" />
+              <span style="flex: 1; min-width: 12rem;">Подмени вече издадени кодове. Старите кодове и текущият вход стават невалидни; отговорите се запазват.</span>
+            </label>
+            <p class="hint">При обикновено издаване вече съществуващите кодове се пропускат. Подмяна правете само при нужда от нов код.</p>
+            <div class="actions compact">
+              <button id="access-codes-issue" class="button" type="submit">Издай лични кодове</button>
+              <button id="access-codes-clear" class="button" type="button">Изчисти списъка и кодовете</button>
+            </div>
+          </form>
+          <p class="hint" id="access-codes-status" role="status"></p>
+          <div id="access-codes-result" hidden>
+            <p class="hint">Кодовете се връщат само при издаването им; сървърът съхранява само хеш. Изтеглете ги преди смяна на сесията, заключване или презареждане. Пазете CSV файла като лични данни и го изтрийте след раздаването.</p>
+            <button id="access-codes-download" class="button" type="button">Изтегли личните кодове (CSV)</button>
+            <table class="table" style="margin-top: 0.6rem;">
+              <thead><tr><th>Факултетен номер</th><th>Личен код</th></tr></thead>
+              <tbody id="access-codes-rows"></tbody>
+            </table>
+          </div>
+        </details>
+
         <div class="grid three" style="margin-top: 1rem;">
           <div class="summary-stat"><span class="label">Студенти</span><span class="value" id="stat-students">0</span></div>
           <div class="summary-stat"><span class="label">Изминало</span><span class="value" id="stat-elapsed">—</span></div>
@@ -81,6 +112,7 @@
             <tbody></tbody>
           </table>
           <p class="hint" id="live-empty" hidden>Все още няма влезли студенти.</p>
+          <p class="hint">Смяната на фокуса, излизането от цял екран и другите технически събития не доказват преписване. При оценяване прегледайте случая лично и дайте възможност за обяснение.</p>
         </div>
       </section>
 
@@ -220,7 +252,7 @@
     </section>
   </main>
 
-  <script src="shared.js?v=20260506.2"></script>
-  <script src="admin.js?v=20260506.2"></script>
+  <script src="shared.js?v=20261030.1"></script>
+  <script src="admin.js?v=20261030.1"></script>
 </body>
 </html>

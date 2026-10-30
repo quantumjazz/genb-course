@@ -11,7 +11,8 @@ The test:
   5. one student triggers /quiz/blur,
   6. exports the .xlsx and checks the header rows.
 
-Run the server first:  python3 server.py
+Run the server first with QUIZ_ADMIN_KEY set; pass the same key through
+the environment or --admin. Use a disposable local database, never production.
 
 This script is for development sanity checks only, not for production.
 """
@@ -98,6 +99,8 @@ def main():
 
     base = args.base.rstrip("/")
     admin_headers = {"X-Admin-Key": args.admin} if args.admin else {}
+    if not args.admin:
+        parser.error("Set QUIZ_ADMIN_KEY or pass --admin for the local test server.")
 
     print("[1] health")
     health = request("GET", f"{base}/quiz/health")
@@ -154,43 +157,51 @@ def main():
                     body={"session_id": sid}, headers=admin_headers)
     assert start.get("started_at"), start
 
-    print("[5] join 2 students")
+    print("[5] issue private codes and join 2 students")
+    issued = request("POST", f"{base}/quiz/admin/session/access-codes",
+                     body={"session_id": sid,
+                           "student_numbers": ["STU-001", "STU-002"]},
+                     headers=admin_headers)
+    codes = {r["student_number"]: r["access_code"] for r in issued["credentials"]}
     j1 = request("POST", f"{base}/quiz/join",
-                 body={"code": code, "student_number": "STU-001"})
+                 body={"code": code, "student_number": "STU-001",
+                       "access_code": codes["STU-001"]})
     j2 = request("POST", f"{base}/quiz/join",
-                 body={"code": code, "student_number": "STU-002"})
-    print(f"   tokens: {j1['student_token']}, {j2['student_token']}")
+                 body={"code": code, "student_number": "STU-002",
+                       "access_code": codes["STU-002"]})
+    student1_headers = {"X-Student-Token": j1["student_token"]}
+    student2_headers = {"X-Student-Token": j2["student_token"]}
 
     print("[6] STU-001 answers 3 questions")
     for i in range(3):
-        nxt = request("GET", f"{base}/quiz/next?student_token={j1['student_token']}")
+        nxt = request("GET", f"{base}/quiz/next", headers=student1_headers)
         if nxt.get("session_ended"):
             print(f"   ended early: {nxt}")
             break
         if i == 0:
             incident = request("POST", f"{base}/quiz/incident",
                                body={
-                                   "student_token": j1["student_token"],
                                    "attempt_id": nxt["attempt_id"],
                                    "event_type": "smoke_incident",
                                    "client_ts": 1234567890,
-                                   "metadata": {"source": "smoke_test"},
-                               })
+                                   "metadata": {"hidden": False, "fullscreen": False},
+                               }, headers=student1_headers)
             assert incident.get("ok"), incident
         ans = request("POST", f"{base}/quiz/answer",
-                      body={"attempt_id": nxt["attempt_id"], "chosen_visible_index": 0})
+                      body={"attempt_id": nxt["attempt_id"], "chosen_visible_index": 0},
+                      headers=student1_headers)
         print(f"   q{nxt['ord']}: stem={nxt['stem'][:30]!r}, ord={nxt['ord']}, correct={ans['correct']}")
 
     print("[7] STU-002 triggers blur on first question")
-    nxt = request("GET", f"{base}/quiz/next?student_token={j2['student_token']}")
+    nxt = request("GET", f"{base}/quiz/next", headers=student2_headers)
     print(f"   served ord={nxt['ord']}")
     blur = request("POST", f"{base}/quiz/blur",
-                   body={"attempt_id": nxt["attempt_id"]})
+                   body={"attempt_id": nxt["attempt_id"]}, headers=student2_headers)
     print(f"   blur result: {blur}")
     assert blur.get("swapped"), blur
 
     print("[8] STU-002 fetches next — should not have ord skipped")
-    nxt2 = request("GET", f"{base}/quiz/next?student_token={j2['student_token']}")
+    nxt2 = request("GET", f"{base}/quiz/next", headers=student2_headers)
     print(f"   re-served ord={nxt2.get('ord')}")
     assert nxt2.get("ord") == 1, "ord should still be 1 after a soft blur swap"
 

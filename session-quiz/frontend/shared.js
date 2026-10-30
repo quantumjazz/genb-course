@@ -49,13 +49,14 @@
     return true;
   }
 
-  async function request(path, { method = "GET", body, adminKey, formData, raw } = {}) {
+  async function request(path, { method = "GET", body, adminKey, studentToken, formData, raw } = {}) {
     const apiBase = API_BASE.replace(/\/$/, "");
     if (window.location.protocol === "https:" && apiBase.startsWith("http://")) {
       throw new Error("This page is HTTPS, so the API base must also be HTTPS.");
     }
     const headers = {};
     if (body !== undefined && !formData) headers["Content-Type"] = "application/json";
+    if (studentToken) headers["X-Student-Token"] = studentToken;
     if (adminKey) {
       headers["X-Admin-Key-B64"] = encodeBase64Utf8(adminKey);
       if (canUseRawHeaderValue(adminKey)) headers["X-Admin-Key"] = adminKey;
@@ -78,7 +79,9 @@
           const errPayload = await response.json();
           if (errPayload && errPayload.error) msg = errPayload.error;
         } catch (_) { /* ignore */ }
-        throw new Error(msg);
+        const error = new Error(msg);
+        error.status = response.status;
+        throw error;
       }
       return response;
     }
@@ -88,7 +91,9 @@
       : await response.text();
     if (!response.ok) {
       const msg = (payload && payload.error) || `Request failed with status ${response.status}`;
-      throw new Error(msg);
+      const error = new Error(msg);
+      error.status = response.status;
+      throw error;
     }
     return payload;
   }

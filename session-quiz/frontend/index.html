@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Тест</title>
-  <link rel="stylesheet" href="styles.css?v=20260506.1" />
+  <link rel="stylesheet" href="styles.css?v=20261030.1" />
 </head>
 <body>
   <main class="shell narrow">
@@ -17,6 +17,19 @@
     <section id="card-login" class="panel">
       <h1 id="login-title">Вход в теста</h1>
       <p id="login-rules" class="lede"></p>
+      <div class="data-use-summary hint">
+        <p>За провеждането на теста се записват факултетният ви номер, отговорите,
+          резултатите и времето за работа. При напускане на страницата се обработва
+          загубата на фокус, а когато режимът го изисква — и събития за цял екран
+          и промяна на прозореца.</p>
+        <p>Данните се съхраняват на лаптопа на преподавателя и могат да бъдат
+          експортирани за оценяване. Връзката преминава през Cloudflare.
+          Не се използват камера и микрофон. При технически инцидент се свържете
+          с преподавателя.</p>
+        <p id="privacy-notice-row" hidden>
+          <a id="privacy-notice-link" target="_blank" rel="noopener noreferrer">Пълна информация за обработването на лични данни</a>
+        </p>
+      </div>
       <form id="login-form" class="grid" style="margin-top: 1rem;">
         <label>
           <span>Код на сесията</span>
@@ -28,6 +41,16 @@
           <input id="login-student-number" name="student_number"
                  autocomplete="off" inputmode="text" required />
         </label>
+        <label>
+          <span>Личен код за достъп</span>
+          <input id="login-access-code" name="access_code" type="password"
+                 autocomplete="off" spellcheck="false" required
+                 aria-describedby="login-access-help" />
+        </label>
+        <p id="login-access-help" class="hint" style="margin: 0;">
+          Получете личния си код за тази сесия от преподавателя. Не го споделяйте.
+          За по-стари сесии също е необходим издаден личен код.
+        </p>
         <div class="actions">
           <button class="button primary" type="submit">Влез</button>
         </div>
@@ -82,7 +105,7 @@
     </section>
   </main>
 
-  <script src="shared.js?v=20260506.1"></script>
-  <script src="app.js?v=20260506.1"></script>
+  <script src="shared.js?v=20261030.1"></script>
+  <script src="app.js?v=20261030.1"></script>
 </body>
 </html>

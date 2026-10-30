@@ -56,7 +56,15 @@ CREATE TABLE IF NOT EXISTS quiz_student (
   joined_at       INTEGER NOT NULL,
   ended_at        INTEGER,
   end_reason      TEXT,
+  auth_token_hash TEXT,
   PRIMARY KEY (session_id, student_token)
+);
+
+CREATE TABLE IF NOT EXISTS quiz_credential (
+  session_id       TEXT NOT NULL REFERENCES quiz_session(id) ON DELETE CASCADE,
+  student_number   TEXT NOT NULL,
+  access_code_hash TEXT NOT NULL,
+  PRIMARY KEY (session_id, student_number)
 );
 
 CREATE TABLE IF NOT EXISTS quiz_attempt (
@@ -119,6 +127,13 @@ def init_schema(conn):
             "quiz_session",
             "security_mode",
             "TEXT NOT NULL DEFAULT 'standard'",
+        )
+        # Existing pseudonyms remain internal identifiers, never valid bearer
+        # credentials. Legacy students must log in using an issued access code.
+        _ensure_column(conn, "quiz_student", "auth_token_hash", "TEXT")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_student_auth_token_hash "
+            "ON quiz_student (auth_token_hash) WHERE auth_token_hash IS NOT NULL"
         )
 
 

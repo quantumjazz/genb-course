@@ -11,6 +11,9 @@
   let livePollTimer = null;
   let banksCache = [];
   let qrLoadedFor = null;
+  let qrObjectUrl = null;
+  let issuedCredentials = [];
+  let credentialGeneration = 0;
 
   // ---- Element refs --------------------------------------------------------
 
@@ -39,6 +42,17 @@
     statRemaining: document.getElementById("stat-remaining"),
     liveStudents: document.getElementById("live-students").querySelector("tbody"),
     liveEmpty: document.getElementById("live-empty"),
+    privacyWarning: document.getElementById("privacy-notice-warning"),
+    accessPanel: document.getElementById("access-codes-panel"),
+    accessForm: document.getElementById("access-codes-form"),
+    accessRoster: document.getElementById("access-codes-roster"),
+    accessReplace: document.getElementById("access-codes-replace"),
+    accessIssue: document.getElementById("access-codes-issue"),
+    accessClear: document.getElementById("access-codes-clear"),
+    accessStatus: document.getElementById("access-codes-status"),
+    accessResult: document.getElementById("access-codes-result"),
+    accessRows: document.getElementById("access-codes-rows"),
+    accessDownload: document.getElementById("access-codes-download"),
 
     createForm: document.getElementById("create-form"),
     cfBank: document.getElementById("cf-bank"),
@@ -70,7 +84,7 @@
   // ---- Init ---------------------------------------------------------------
 
   function init() {
-    adminKey = loadKey();
+    removeLegacyKey();
     activeSessionId = loadActiveSession();
     refreshKeyStatus();
 
@@ -91,28 +105,33 @@
 
     els.liveStart.addEventListener("click", onStartSession);
     els.liveClose.addEventListener("click", onCloseSession);
+    els.accessForm.addEventListener("submit", onIssueAccessCodes);
+    els.accessClear.addEventListener("click", () => clearIssuedCodes());
+    els.accessDownload.addEventListener("click", downloadAccessCodes);
+    els.accessReplace.addEventListener("change", () => {
+      els.accessIssue.textContent = els.accessReplace.checked ? "Подмени личните кодове" : "Издай лични кодове";
+    });
+    window.addEventListener("pagehide", clearKey);
 
+    refreshPrivacyNoticeWarning();
     refreshAll();
   }
 
-  function loadKey() {
-    try { return window.localStorage.getItem(KEY_STORAGE) || ""; }
-    catch (_) { return ""; }
-  }
-  function saveKey(k) {
-    try {
-      if (k) window.localStorage.setItem(KEY_STORAGE, k);
-      else window.localStorage.removeItem(KEY_STORAGE);
-    } catch (_) { /* ignore */ }
+  function removeLegacyKey() {
+    try { window.localStorage.removeItem(KEY_STORAGE); } catch (_) { /* ignore */ }
+    try { window.sessionStorage.removeItem(KEY_STORAGE); } catch (_) { /* ignore */ }
   }
   function loadActiveSession() {
-    try { return window.localStorage.getItem(ACTIVE_SESSION_STORAGE) || null; }
+    try {
+      window.localStorage.removeItem(ACTIVE_SESSION_STORAGE);
+      return window.sessionStorage.getItem(ACTIVE_SESSION_STORAGE) || null;
+    }
     catch (_) { return null; }
   }
   function saveActiveSession(id) {
     try {
-      if (id) window.localStorage.setItem(ACTIVE_SESSION_STORAGE, id);
-      else window.localStorage.removeItem(ACTIVE_SESSION_STORAGE);
+      if (id) window.sessionStorage.setItem(ACTIVE_SESSION_STORAGE, id);
+      else window.sessionStorage.removeItem(ACTIVE_SESSION_STORAGE);
     } catch (_) { /* ignore */ }
   }
 
@@ -130,6 +149,9 @@
   }
 
   function closeKeyDialog() {
+    // dialog.close() dispatches its close event asynchronously; wipe the
+    // password field immediately on every save, cancel and lock action.
+    els.keyInput.value = "";
     if (typeof els.keyDialog.close === "function" && els.keyDialog.open) {
       els.keyDialog.close();
     } else {
@@ -140,8 +162,10 @@
 
   function onKeyDialogSubmit(event) {
     event.preventDefault();
+    clearIssuedCodes();
+    clearLiveView();
     adminKey = els.keyInput.value.trim();
-    saveKey(adminKey);
+    removeLegacyKey();
     refreshKeyStatus();
     closeKeyDialog();
     refreshAll();
@@ -149,7 +173,9 @@
 
   function clearKey() {
     adminKey = "";
-    saveKey("");
+    removeLegacyKey();
+    clearIssuedCodes();
+    clearLiveView();
     refreshKeyStatus();
     closeKeyDialog();
     refreshAll();
@@ -177,6 +203,17 @@
   // ---- Refresh dispatch ----------------------------------------------------
 
   async function refreshAll() {
+    if (!adminKey) {
+      stopLivePoll();
+      banksCache = [];
+      renderBanks([]);
+      renderBankSelect([]);
+      renderSessions([]);
+      els.banksEmpty.textContent = "Въведете админ ключ, за да заредите банките.";
+      els.sessionsEmpty.textContent = "Въведете админ ключ, за да заредите сесиите.";
+      els.livePanel.hidden = true;
+      return;
+    }
     await refreshBanks();
     await refreshSessions();
     if (activeSessionId) {
@@ -184,15 +221,128 @@
     }
   }
 
+  async function refreshPrivacyNoticeWarning() {
+    try {
+      const config = await request("/quiz/config");
+      els.privacyWarning.hidden = Boolean(config.privacy_notice_url);
+      els.privacyWarning.textContent = "Не е зададен адрес на пълното университетско уведомление за лични данни. Настройте QUIZ_PRIVACY_NOTICE_URL преди тест с реални студенти.";
+    } catch (_) {
+      els.privacyWarning.hidden = false;
+      els.privacyWarning.textContent = "Адресът на уведомлението за лични данни не може да бъде проверен. Проверете настройката на сървъра преди тест с реални студенти.";
+    }
+  }
+
+  function clearLiveView() {
+    qrLoadedFor = null;
+    if (qrObjectUrl) URL.revokeObjectURL(qrObjectUrl);
+    qrObjectUrl = null;
+    els.liveCode.textContent = "——————";
+    els.liveQr.removeAttribute("src");
+    els.liveTitle.textContent = "Зареждане…";
+    els.liveMeta.textContent = "";
+    els.liveStatusLine.textContent = "";
+    els.liveStudents.innerHTML = "";
+    els.liveEmpty.hidden = true;
+    els.statStudents.textContent = "0";
+    els.statElapsed.textContent = "—";
+    els.statRemaining.textContent = "—";
+  }
+
+  // Codes and roster input stay in this page's memory and DOM only.
+  function clearIssuedCodes(clearRoster = true) {
+    credentialGeneration += 1;
+    issuedCredentials = [];
+    els.accessRows.replaceChildren();
+    els.accessResult.hidden = true;
+    els.accessStatus.textContent = "";
+    els.accessIssue.disabled = false;
+    if (clearRoster) {
+      els.accessRoster.value = "";
+      els.accessReplace.checked = false;
+      els.accessIssue.textContent = "Издай лични кодове";
+      els.accessPanel.open = false;
+    }
+  }
+
+  async function onIssueAccessCodes(event) {
+    event.preventDefault();
+    const sessionId = activeSessionId;
+    const key = adminKey;
+    if (!sessionId || !key) return;
+    const studentNumbers = [...new Set(els.accessRoster.value.split(/\r?\n/)
+      .map((value) => value.trim().toUpperCase()).filter(Boolean))];
+    if (!studentNumbers.length) {
+      toast("Въведете поне един факултетен номер.", "error");
+      return;
+    }
+    const replace = els.accessReplace.checked;
+    if (replace && !window.confirm("Подмяна на личните кодове за въведения списък? Старите кодове и текущият вход стават невалидни. Отговорите се запазват. Раздайте новите кодове индивидуално.")) return;
+    clearIssuedCodes(false);
+    const generation = credentialGeneration;
+    els.accessIssue.disabled = true;
+    els.accessStatus.textContent = "Издаване на кодове…";
+    try {
+      const result = await adminApi("/quiz/admin/session/access-codes", key, {
+        method: "POST",
+        body: { session_id: sessionId, student_numbers: studentNumbers, replace },
+      });
+      if (sessionId !== activeSessionId || key !== adminKey || generation !== credentialGeneration) return;
+      issuedCredentials = (result.credentials || []).map((entry) => ({
+        student_number: String(entry.student_number), access_code: String(entry.access_code),
+      }));
+      const skipped = result.skipped || [];
+      els.accessStatus.textContent = `Издадени: ${issuedCredentials.length}. Пропуснати със съществуващ код: ${skipped.length}.`
+        + (skipped.length ? ` Номера: ${skipped.join(", ")}. За нов код въведете само тях и изберете изрична подмяна.` : "");
+      els.accessRows.innerHTML = issuedCredentials.map((entry) => `<tr>
+        <td>${escapeHtml(entry.student_number)}</td><td><code>${escapeHtml(entry.access_code)}</code></td>
+      </tr>`).join("");
+      els.accessResult.hidden = issuedCredentials.length === 0;
+      els.accessReplace.checked = false;
+      els.accessIssue.textContent = "Издай лични кодове";
+      pollLive();
+    } catch (err) {
+      if (sessionId !== activeSessionId || key !== adminKey || generation !== credentialGeneration) return;
+      els.accessStatus.textContent = `Не са получени кодове: ${err.message}. При прекъсната връзка може вече да са издадени; ако липсват, направете изрична подмяна.`;
+      toast(err.message || "Издаването не успя.", "error");
+    } finally {
+      if (generation === credentialGeneration) els.accessIssue.disabled = false;
+    }
+  }
+
+  function accessCsvCell(value) {
+    let text = String(value ?? "");
+    // Quoting alone does not stop spreadsheet formula evaluation.
+    if (/^[\s\u0000-\u001f]*[=+\-@]/.test(text) || /^[\t\r\n]/.test(text)) text = "'" + text;
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+
+  function downloadAccessCodes() {
+    if (!adminKey || !activeSessionId || !issuedCredentials.length) return;
+    const rows = [["student_number", "access_code"], ...issuedCredentials.map((entry) => [entry.student_number, entry.access_code])];
+    const csv = "\uFEFF" + rows.map((row) => row.map(accessCsvCell).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `quiz_private_access_codes_${activeSessionId}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   // ---- Banks --------------------------------------------------------------
 
   async function refreshBanks() {
+    const key = adminKey;
+    if (!key) return;
     try {
-      const data = await adminApi("/quiz/admin/bank/list", adminKey);
+      const data = await adminApi("/quiz/admin/bank/list", key);
+      if (key !== adminKey) return;
       banksCache = data.banks || [];
       renderBanks(banksCache);
       renderBankSelect(banksCache);
     } catch (err) {
+      if (key !== adminKey) return;
       banksCache = [];
       renderBanks([]);
       renderBankSelect([]);
@@ -360,10 +510,14 @@
   // ---- Sessions list -------------------------------------------------------
 
   async function refreshSessions() {
+    const key = adminKey;
+    if (!key) return;
     try {
-      const data = await adminApi("/quiz/admin/session/list", adminKey);
+      const data = await adminApi("/quiz/admin/session/list", key);
+      if (key !== adminKey) return;
       renderSessions(data.sessions || []);
     } catch (err) {
+      if (key !== adminKey) return;
       renderSessions([]);
       els.sessionsEmpty.hidden = false;
       els.sessionsEmpty.textContent = `Грешка при зареждане на сесиите: ${err.message}`;
@@ -424,6 +578,8 @@
     try {
       await adminApi(`/quiz/admin/session/${encodeURIComponent(id)}`, adminKey, { method: "DELETE" });
       if (activeSessionId === id) {
+        clearIssuedCodes();
+        clearLiveView();
         activeSessionId = null;
         saveActiveSession(null);
         stopLivePoll();
@@ -437,12 +593,15 @@
   }
 
   async function exportSession(id) {
+    const key = adminKey;
+    if (!key) return;
     try {
       const response = await request(
         `/quiz/admin/session/export?session_id=${encodeURIComponent(id)}`,
-        { adminKey, raw: true }
+        { adminKey: key, raw: true }
       );
       const blob = await response.blob();
+      if (key !== adminKey) return;
       const cd = response.headers.get("Content-Disposition") || "";
       const m = cd.match(/filename="([^"]+)"/);
       const filename = m ? m[1] : `quiz_${id}.xlsx`;
@@ -482,11 +641,15 @@
       toast("Изберете банка и поне една тема.", "error");
       return;
     }
+    const key = adminKey;
+    if (!key) return;
     try {
-      const result = await adminApi("/quiz/admin/session/create", adminKey, {
+      const result = await adminApi("/quiz/admin/session/create", key, {
         method: "POST",
         body: payload,
       });
+      if (key !== adminKey) return;
+      clearIssuedCodes();
       activeSessionId = result.session_id;
       saveActiveSession(activeSessionId);
       toast(`Сесия ${result.join_code} е създадена.`, "ok");
@@ -504,6 +667,7 @@
   // ---- Live panel ---------------------------------------------------------
 
   function openSession(id) {
+    if (activeSessionId !== id) clearIssuedCodes();
     activeSessionId = id;
     saveActiveSession(id);
     refreshSessions();
@@ -513,7 +677,7 @@
 
   function startLivePoll() {
     stopLivePoll();
-    if (!activeSessionId) {
+    if (!activeSessionId || !adminKey) {
       els.livePanel.hidden = true;
       return;
     }
@@ -521,13 +685,7 @@
     // Eagerly clear stale UI from any previous active session, so the
     // instructor never sees yesterday's QR or join code while the first
     // poll is in flight.
-    qrLoadedFor = null;
-    els.liveCode.textContent = "——————";
-    els.liveQr.removeAttribute("src");
-    els.liveTitle.textContent = "Зареждане…";
-    els.liveMeta.textContent = "";
-    els.liveStudents.innerHTML = "";
-    els.liveEmpty.hidden = true;
+    clearLiveView();
     pollLive();
     livePollTimer = setInterval(pollLive, 3000);
   }
@@ -537,16 +695,22 @@
   }
 
   async function pollLive() {
-    if (!activeSessionId) return;
+    const sessionId = activeSessionId;
+    const key = adminKey;
+    if (!sessionId || !key) return;
     try {
       const data = await adminApi(
-        `/quiz/admin/session/live?session_id=${encodeURIComponent(activeSessionId)}`,
-        adminKey
+        `/quiz/admin/session/live?session_id=${encodeURIComponent(sessionId)}`,
+        key
       );
+      if (sessionId !== activeSessionId || key !== adminKey) return;
       renderLive(data);
     } catch (err) {
+      if (sessionId !== activeSessionId || key !== adminKey) return;
       // Could be a stale id (deleted); detach quietly.
       if (String(err.message).toLowerCase().includes("not found")) {
+        clearIssuedCodes();
+        clearLiveView();
         activeSessionId = null;
         saveActiveSession(null);
         els.livePanel.hidden = true;
@@ -605,17 +769,20 @@
 
   async function refreshQrSrc(sessionId) {
     if (qrLoadedFor === sessionId) return;
+    const key = adminKey;
     qrLoadedFor = sessionId;
     try {
       const response = await request(
         `/quiz/admin/session/qr?session_id=${encodeURIComponent(sessionId)}`,
-        { adminKey, raw: true }
+        { adminKey: key, raw: true }
       );
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      els.liveQr.src = url;
+      if (sessionId !== activeSessionId || key !== adminKey) return;
+      if (qrObjectUrl) URL.revokeObjectURL(qrObjectUrl);
+      qrObjectUrl = URL.createObjectURL(blob);
+      els.liveQr.src = qrObjectUrl;
     } catch (_) {
-      qrLoadedFor = null;
+      if (sessionId === activeSessionId && key === adminKey) qrLoadedFor = null;
     }
   }
 
