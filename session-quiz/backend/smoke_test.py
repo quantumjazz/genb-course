@@ -21,6 +21,7 @@ import argparse
 import io
 import json
 import os
+import secrets
 import sys
 import urllib.error
 import urllib.request
@@ -157,18 +158,13 @@ def main():
                     body={"session_id": sid}, headers=admin_headers)
     assert start.get("started_at"), start
 
-    print("[5] issue private codes and join 2 students")
-    issued = request("POST", f"{base}/quiz/admin/session/access-codes",
-                     body={"session_id": sid,
-                           "student_numbers": ["STU-001", "STU-002"]},
-                     headers=admin_headers)
-    codes = {r["student_number"]: r["access_code"] for r in issued["credentials"]}
+    print("[5] join 2 students with automatic private browser credentials")
     j1 = request("POST", f"{base}/quiz/join",
                  body={"code": code, "student_number": "STU-001",
-                       "access_code": codes["STU-001"]})
+                       "browser_token": secrets.token_urlsafe(32)})
     j2 = request("POST", f"{base}/quiz/join",
                  body={"code": code, "student_number": "STU-002",
-                       "access_code": codes["STU-002"]})
+                       "browser_token": secrets.token_urlsafe(32)})
     student1_headers = {"X-Student-Token": j1["student_token"]}
     student2_headers = {"X-Student-Token": j2["student_token"]}
 

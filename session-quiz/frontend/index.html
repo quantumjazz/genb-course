@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Тест</title>
-  <link rel="stylesheet" href="styles.css?v=20261030.1" />
+  <link rel="stylesheet" href="styles.css?v=20261030.2" />
 </head>
 <body>
   <main class="shell narrow">
@@ -26,9 +26,12 @@
           експортирани за оценяване. Връзката преминава през Cloudflare.
           Не се използват камера и микрофон. При технически инцидент се свържете
           с преподавателя.</p>
+        <dl id="privacy-details" class="privacy-details" hidden></dl>
         <p id="privacy-notice-row" hidden>
-          <a id="privacy-notice-link" target="_blank" rel="noopener noreferrer">Пълна информация за обработването на лични данни</a>
+          <a id="privacy-notice-link" target="_blank" rel="noopener noreferrer">Университетска политика за личните данни</a>
         </p>
+        <p id="privacy-incomplete">Пълната информация за обработването на лични данни
+          още не е попълнена. Свържете се с преподавателя за липсващите сведения.</p>
       </div>
       <form id="login-form" class="grid" style="margin-top: 1rem;">
         <label>
@@ -41,20 +44,17 @@
           <input id="login-student-number" name="student_number"
                  autocomplete="off" inputmode="text" required />
         </label>
-        <label>
-          <span>Личен код за достъп</span>
-          <input id="login-access-code" name="access_code" type="password"
-                 autocomplete="off" spellcheck="false" required
-                 aria-describedby="login-access-help" />
-        </label>
-        <p id="login-access-help" class="hint" style="margin: 0;">
-          Получете личния си код за тази сесия от преподавателя. Не го споделяйте.
-          За по-стари сесии също е необходим издаден личен код.
+        <p class="hint" style="margin: 0;">
+          Факултетният номер се заявява от вас. За продължаване използвайте същия
+          раздел на браузъра. Ако загубите достъп до него, поискайте връзка за
+          възстановяване от преподавателя.
         </p>
         <div class="actions">
-          <button class="button primary" type="submit">Влез</button>
+          <button id="login-submit" class="button primary" type="submit">Влез</button>
+          <button id="login-retry" class="button" type="button" hidden>Опитай отново</button>
         </div>
       </form>
+      <p id="login-status" class="hint" role="status" hidden></p>
       <p id="login-error" class="hint" style="color: var(--danger);" hidden></p>
     </section>
 
@@ -105,7 +105,7 @@
     </section>
   </main>
 
-  <script src="shared.js?v=20261030.1"></script>
-  <script src="app.js?v=20261030.1"></script>
+  <script src="shared.js?v=20261030.2"></script>
+  <script src="app.js?v=20261030.2"></script>
 </body>
 </html>

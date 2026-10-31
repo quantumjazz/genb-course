@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Session Quiz — Instructor Console</title>
-  <link rel="stylesheet" href="styles.css?v=20261030.1" />
+  <link rel="stylesheet" href="styles.css?v=20261030.2" />
 </head>
 <body>
   <main class="shell wide">
@@ -37,6 +37,26 @@
       <button class="tab-btn" data-tab="banks" type="button">Банки въпроси</button>
     </nav>
     <p class="hint" id="privacy-notice-warning" role="status" hidden></p>
+    <details id="privacy-settings-panel" class="panel">
+      <summary>Информация за личните данни — обща настройка</summary>
+      <p class="hint">Попълнете веднъж за курса с потвърдени данни от университета. Студентите виждат тази информация преди вход; не е нужно одобрение за всеки студент. Общата университетска политика не потвърждава основанието и срока за този тест. Пълнотата на полетата не е правна оценка.</p>
+      <form id="privacy-settings-form">
+        <fieldset id="privacy-settings-fields" disabled style="border: 0; padding: 0; margin: 0;">
+          <div class="grid two">
+            <label><span>Администратор на личните данни — организация</span><input id="privacy-controller-name" type="text" autocomplete="off" /></label>
+            <label><span>Контакт за въпроси и искания за лични данни</span><textarea id="privacy-contact" rows="2"></textarea></label>
+            <label><span>Цел и приложимо правно основание, потвърдени от университета</span><textarea id="privacy-legal-basis" rows="3"></textarea></label>
+            <label><span>Срок или критерий за съхранение</span><textarea id="privacy-retention" rows="3"></textarea></label>
+            <label><span>Получатели, хостинг и приложими международни трансфери</span><textarea id="privacy-recipients" rows="3"></textarea></label>
+            <label><span>Права, начин за упражняване и жалба</span><textarea id="privacy-rights" rows="3"></textarea></label>
+            <label style="grid-column: 1 / -1;"><span>Адрес на университетската или друга свързана политика за лични данни</span><input id="privacy-notice-url" type="url" autocomplete="off" /></label>
+          </div>
+          <p class="hint">Попълнете всичките шест полета. Линк към обща политика не замества липсващите сведения за приложението. Няма автоматично изтриване: посоченият срок трябва да се изпълнява ръчно за базата, експортираните файлове и резервните копия.</p>
+          <button id="privacy-settings-save" class="button" type="submit">Запази общата информация</button>
+        </fieldset>
+      </form>
+      <p class="hint" id="privacy-settings-status" role="status">Въведете админ ключ, за да редактирате.</p>
+    </details>
 
     <!-- ============ SESSIONS TAB ============ -->
     <section id="tab-sessions">
@@ -62,34 +82,15 @@
           <img id="live-qr" class="qr-img" alt="QR" />
         </div>
 
-        <details id="access-codes-panel" style="margin-top: 1rem;">
-          <summary>Лични кодове за вход — само за преподавателя</summary>
-          <p class="hint">Раздайте всеки код лично или чрез индивидуално съобщение в Moodle. Не прожектирайте и не споделяйте целия списък. Общият код на сесията не замества личния код.</p>
-          <form id="access-codes-form">
-            <label>
-              <span>Факултетни номера — по един на ред</span>
-              <textarea id="access-codes-roster" rows="5" autocomplete="off" spellcheck="false" required></textarea>
-            </label>
-            <label class="row compact" style="margin-top: 0.6rem;">
-              <input id="access-codes-replace" type="checkbox" style="width: auto; flex: 0 0 auto;" />
-              <span style="flex: 1; min-width: 12rem;">Подмени вече издадени кодове. Старите кодове и текущият вход стават невалидни; отговорите се запазват.</span>
-            </label>
-            <p class="hint">При обикновено издаване вече съществуващите кодове се пропускат. Подмяна правете само при нужда от нов код.</p>
-            <div class="actions compact">
-              <button id="access-codes-issue" class="button" type="submit">Издай лични кодове</button>
-              <button id="access-codes-clear" class="button" type="button">Изчисти списъка и кодовете</button>
-            </div>
-          </form>
-          <p class="hint" id="access-codes-status" role="status"></p>
-          <div id="access-codes-result" hidden>
-            <p class="hint">Кодовете се връщат само при издаването им; сървърът съхранява само хеш. Изтеглете ги преди смяна на сесията, заключване или презареждане. Пазете CSV файла като лични данни и го изтрийте след раздаването.</p>
-            <button id="access-codes-download" class="button" type="button">Изтегли личните кодове (CSV)</button>
-            <table class="table" style="margin-top: 0.6rem;">
-              <thead><tr><th>Факултетен номер</th><th>Личен код</th></tr></thead>
-              <tbody id="access-codes-rows"></tbody>
-            </table>
-          </div>
-        </details>
+        <p class="hint">Входът е автоматичен с общия код на сесията и факултетен номер. Първият вход се свързва с браузъра; номерът е заявен от студента и не е проверена самоличност.</p>
+        <section id="recovery-result" class="panel" style="margin-top: 1rem;" hidden>
+          <h3 id="recovery-title">Възстановяване на достъпа</h3>
+          <p class="hint">Изпратете този линк само на съответния студент. Той го отваря без въвеждане на личен код. Не прожектирайте линка.</p>
+          <label><span>Личен линк за възстановяване</span><input id="recovery-url" type="text" readonly autocomplete="off" spellcheck="false" /></label>
+          <p class="hint" id="recovery-expiry"></p>
+          <button id="recovery-clear" class="button" type="button">Скрий линка</button>
+        </section>
+        <p class="hint" id="recovery-status" role="status"></p>
 
         <div class="grid three" style="margin-top: 1rem;">
           <div class="summary-stat"><span class="label">Студенти</span><span class="value" id="stat-students">0</span></div>
@@ -107,6 +108,7 @@
                 <th>Смени (blur)</th>
                 <th>Инциденти</th>
                 <th>Статус</th>
+                <th>Загубен браузър</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -252,7 +254,7 @@
     </section>
   </main>
 
-  <script src="shared.js?v=20261030.1"></script>
-  <script src="admin.js?v=20261030.1"></script>
+  <script src="shared.js?v=20261030.2"></script>
+  <script src="admin.js?v=20261030.2"></script>
 </body>
 </html>

@@ -149,6 +149,9 @@ textarea { min-height: 5rem; resize: vertical; }
 .data-use-summary { margin-top: 1rem; padding-top: 0.2rem; border-top: 1px solid var(--line); }
 .data-use-summary p { margin: 0.65rem 0; }
 .data-use-summary a { color: var(--accent); text-decoration: underline; }
+.privacy-details { margin: 0.75rem 0; }
+.privacy-details dt { margin-top: 0.6rem; font-weight: 600; color: var(--ink); }
+.privacy-details dd { margin: 0.15rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .table { width: 100%; border-collapse: collapse; }
 .table th, .table td {

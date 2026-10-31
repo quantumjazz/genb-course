@@ -57,6 +57,10 @@ CREATE TABLE IF NOT EXISTS quiz_student (
   ended_at        INTEGER,
   end_reason      TEXT,
   auth_token_hash TEXT,
+  recovery_token_hash TEXT,
+  recovery_expires_at INTEGER,
+  recovery_used_hash TEXT,
+  recovery_used_expires_at INTEGER,
   PRIMARY KEY (session_id, student_token)
 );
 
@@ -65,6 +69,11 @@ CREATE TABLE IF NOT EXISTS quiz_credential (
   student_number   TEXT NOT NULL,
   access_code_hash TEXT NOT NULL,
   PRIMARY KEY (session_id, student_number)
+);
+
+CREATE TABLE IF NOT EXISTS quiz_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS quiz_attempt (
@@ -129,11 +138,24 @@ def init_schema(conn):
             "TEXT NOT NULL DEFAULT 'standard'",
         )
         # Existing pseudonyms remain internal identifiers, never valid bearer
-        # credentials. Legacy students must log in using an issued access code.
+        # credentials. Legacy students need exceptional instructor recovery;
+        # student-number-only login must never overwrite an existing identity.
         _ensure_column(conn, "quiz_student", "auth_token_hash", "TEXT")
+        _ensure_column(conn, "quiz_student", "recovery_token_hash", "TEXT")
+        _ensure_column(conn, "quiz_student", "recovery_expires_at", "INTEGER")
+        _ensure_column(conn, "quiz_student", "recovery_used_hash", "TEXT")
+        _ensure_column(conn, "quiz_student", "recovery_used_expires_at", "INTEGER")
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_student_auth_token_hash "
             "ON quiz_student (auth_token_hash) WHERE auth_token_hash IS NOT NULL"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_student_recovery_token_hash "
+            "ON quiz_student (recovery_token_hash) WHERE recovery_token_hash IS NOT NULL"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_student_recovery_used_hash "
+            "ON quiz_student (recovery_used_hash) WHERE recovery_used_hash IS NOT NULL"
         )
 
 

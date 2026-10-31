@@ -3,6 +3,7 @@
 
   const LEGACY_STORAGE_KEY = "session-quiz-student-v1";
   const STORAGE_KEY = "session-quiz-student-v2";
+  const PENDING_JOIN_KEY = "session-quiz-pending-join-v1";
   const FEEDBACK_KEY = "session-quiz-last-feedback-v1";
   const LOST_FOCUS_KEY = "session-quiz-lost-focus-v1";
   const STRICT_RESIZE_RATIO = 0.85;
@@ -23,8 +24,12 @@
     loginForm: document.getElementById("login-form"),
     loginCode: document.getElementById("login-code"),
     loginStudent: document.getElementById("login-student-number"),
-    loginAccessCode: document.getElementById("login-access-code"),
+    loginSubmit: document.getElementById("login-submit"),
+    loginRetry: document.getElementById("login-retry"),
+    loginStatus: document.getElementById("login-status"),
     loginError: document.getElementById("login-error"),
+    privacyDetails: document.getElementById("privacy-details"),
+    privacyIncomplete: document.getElementById("privacy-incomplete"),
     privacyNoticeRow: document.getElementById("privacy-notice-row"),
     privacyNoticeLink: document.getElementById("privacy-notice-link"),
     lobbyRules: document.getElementById("lobby-rules"),
@@ -65,11 +70,14 @@
   let resizeTimer = null;
   let fullscreenEverEntered = false;
   let hardEnded = false;
+  let loginInFlight = false;
+  let activeRecoveryToken = null;
+  let queuedRecoveryToken = null;
 
   // --- Storage --------------------------------------------------------------
 
   function clearLegacyStorage() {
-    [LEGACY_STORAGE_KEY, STORAGE_KEY, FEEDBACK_KEY, LOST_FOCUS_KEY].forEach((key) => {
+    [LEGACY_STORAGE_KEY, STORAGE_KEY, PENDING_JOIN_KEY, FEEDBACK_KEY, LOST_FOCUS_KEY].forEach((key) => {
       try { window.localStorage.removeItem(key); } catch (_) { /* storage may be unavailable */ }
     });
     try { window.sessionStorage.removeItem(LEGACY_STORAGE_KEY); } catch (_) { /* ignore */ }
@@ -84,19 +92,70 @@
     }
   }
 
-  function saveState() {
+  function saveState(required = false) {
     try {
       if (state.token) window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (_) { /* ignore */ }
+    } catch (error) {
+      if (required) throw new Error("Разрешете съхранението за този раздел на браузъра, за да запазите достъпа до теста.");
+    }
   }
 
   function clearState() {
     try { window.sessionStorage.removeItem(STORAGE_KEY); } catch (_) {}
     clearFeedbackState();
     clearLostFocusState();
+    clearPendingJoin();
     state = { token: null, sessionId: null, joinCode: null, displayName: null,
               feedback: "immediate", swapPolicy: "soft",
               securityMode: "standard", itemCount: 0 };
+  }
+
+  function loadPendingJoin() {
+    try {
+      const value = JSON.parse(window.sessionStorage.getItem(PENDING_JOIN_KEY) || "null");
+      if (!value || !/^[A-Za-z0-9_-]{43}$/.test(value.browserToken || "")) return null;
+      if (value.kind === "join" && typeof value.code === "string" && typeof value.studentNumber === "string") return value;
+      if (value.kind === "recovery" && typeof value.recoveryToken === "string" && value.recoveryToken) return value;
+    } catch (_) { /* storage may be unavailable or corrupted */ }
+    return null;
+  }
+
+  function savePendingJoin(pending) {
+    try {
+      window.sessionStorage.setItem(PENDING_JOIN_KEY, JSON.stringify(pending));
+    } catch (_) {
+      throw new Error("Разрешете съхранението за този раздел на браузъра, преди да влезете в теста.");
+    }
+  }
+
+  function clearPendingJoin() {
+    try { window.sessionStorage.removeItem(PENDING_JOIN_KEY); } catch (_) { /* ignore */ }
+    els.loginRetry.hidden = true;
+  }
+
+  function makeBrowserToken() {
+    if (!window.crypto || !window.crypto.getRandomValues) {
+      throw new Error("Този браузър не поддържа защитен достъп. Отворете теста с актуален браузър през HTTPS.");
+    }
+    const bytes = new Uint8Array(32);
+    window.crypto.getRandomValues(bytes);
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function setLoginBusy(busy, message = "") {
+    loginInFlight = busy;
+    [els.loginCode, els.loginStudent, els.loginSubmit, els.loginRetry].forEach((el) => {
+      el.disabled = busy;
+    });
+    els.loginStatus.textContent = message;
+    els.loginStatus.hidden = !message;
+    if (!busy && queuedRecoveryToken) {
+      const recoveryToken = queuedRecoveryToken;
+      queuedRecoveryToken = null;
+      recoverSession(recoveryToken);
+    }
   }
 
   function clearFeedbackState() {
@@ -144,10 +203,9 @@
     currentAttempt = null;
     hardEnded = true;
     clearState();
-    els.loginAccessCode.value = "";
     els.sessionName.textContent = "";
     els.loginError.textContent =
-      "Достъпът до теста е невалиден или изтекъл. Получете личен код за тази сесия от преподавателя и влезте отново.";
+      "Достъпът от този раздел вече не е валиден. Ако сте загубили достъп до започнат тест, поискайте връзка за възстановяване от преподавателя.";
     els.loginError.hidden = false;
     show("login");
     return true;
@@ -172,12 +230,37 @@
   async function loadPrivacyNotice() {
     try {
       const config = await publicApi("/quiz/config");
-      if (!config.privacy_notice_url) return;
-      const url = new URL(config.privacy_notice_url);
-      if (url.protocol !== "https:" && url.protocol !== "http:") return;
-      els.privacyNoticeLink.href = url.href;
-      els.privacyNoticeRow.hidden = false;
-    } catch (_) { /* The factual summary remains visible without a configured notice. */ }
+      const privacy = config.privacy && typeof config.privacy === "object" ? config.privacy : {};
+      const fields = [
+        ["controller_name", "Администратор на личните данни"],
+        ["contact", "Контакт"],
+        ["legal_basis", "Правно основание"],
+        ["retention", "Срок на съхранение"],
+        ["recipients", "Получатели на данните"],
+        ["rights", "Вашите права"],
+      ];
+      els.privacyDetails.replaceChildren();
+      let populated = 0;
+      fields.forEach(([key, label]) => {
+        const value = typeof privacy[key] === "string" ? privacy[key].trim() : "";
+        if (!value) return;
+        const term = document.createElement("dt");
+        term.textContent = label;
+        const description = document.createElement("dd");
+        description.textContent = value;
+        els.privacyDetails.append(term, description);
+        populated += 1;
+      });
+      els.privacyDetails.hidden = !populated;
+      try {
+        const url = new URL(privacy.privacy_notice_url || config.privacy_notice_url || "");
+        if (url.protocol === "https:" || url.protocol === "http:") {
+          els.privacyNoticeLink.href = url.href;
+          els.privacyNoticeRow.hidden = false;
+        }
+      } catch (_) { /* Missing or invalid notice URLs are not linked. */ }
+      els.privacyIncomplete.hidden = config.privacy_info_complete === true && populated === fields.length;
+    } catch (_) { /* The factual summary and incomplete-information prompt remain visible. */ }
   }
 
   // --- Card switching -------------------------------------------------------
@@ -192,33 +275,38 @@
 
   // --- Init -----------------------------------------------------------------
 
-  function init() {
-    loadPrivacyNotice();
+  function takeRecoveryTokenFromLocation() {
     const url = new URL(window.location.href);
+    const fragment = new URLSearchParams(url.hash.slice(1));
+    if (!fragment.has("recovery")) return "";
+    const recoveryToken = fragment.get("recovery") || "";
+    // This also runs on same-document hash navigation, before any API request.
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}`);
+    return recoveryToken;
+  }
+
+  function onRecoveryHashChange() {
+    const recoveryToken = takeRecoveryTokenFromLocation();
+    if (recoveryToken) recoverSession(recoveryToken);
+  }
+
+  function init() {
+    const recoveryFromUrl = takeRecoveryTokenFromLocation();
+    const url = new URL(window.location.href);
+    window.addEventListener("hashchange", onRecoveryHashChange);
+    loadPrivacyNotice();
     const codeFromUrl = (url.searchParams.get("code") || "").toUpperCase();
     if (codeFromUrl) {
       els.loginCode.value = codeFromUrl;
     }
-    // If the URL targets a different session than the cached one,
-    // prefer the URL — otherwise scanning a fresh QR would silently
-    // replay the previous session's ended state.
-    if (state && state.token && codeFromUrl && state.joinCode && codeFromUrl !== state.joinCode) {
-      clearState();
-      els.loginCode.value = codeFromUrl;
-      show("login");
-    } else if (state && state.token) {
-      // Resume — try to fetch live status; on failure fall back to login.
-      els.sessionName.textContent = state.displayName || "";
-      resumeSession().catch((error) => {
-        if (error.status === 401) return;
-        clearState();
-        show("login");
-      });
-    } else {
-      show("login");
-    }
+    show("login");
 
     els.loginForm.addEventListener("submit", onLoginSubmit);
+    els.loginRetry.addEventListener("click", () => {
+      const pending = loadPendingJoin();
+      if (pending && pending.kind === "recovery") recoverSession(pending.recoveryToken);
+      else if (state.token) retryResumeSession();
+    });
     els.fullscreenEnter.addEventListener("click", onEnterFullscreen);
     els.quizSubmit.addEventListener("click", onSubmitAnswer);
     els.quizNext.addEventListener("click", () => {
@@ -232,8 +320,8 @@
       hardEnded = false;
       els.loginCode.value = "";
       els.loginStudent.value = "";
-      els.loginAccessCode.value = "";
       els.loginError.hidden = true;
+      els.loginStatus.hidden = true;
       els.sessionName.textContent = "";
       show("login");
     });
@@ -256,6 +344,47 @@
     cards.quiz.addEventListener("copy", (e) => e.preventDefault());
     cards.quiz.addEventListener("cut", (e) => e.preventDefault());
     cards.quiz.addEventListener("contextmenu", (e) => e.preventDefault());
+
+    const pending = loadPendingJoin();
+    if (recoveryFromUrl) {
+      recoverSession(recoveryFromUrl);
+    } else if (pending && pending.kind === "recovery") {
+      recoverSession(pending.recoveryToken);
+    } else if (state.token && codeFromUrl && state.joinCode && codeFromUrl !== state.joinCode) {
+      clearState();
+    } else if (state.token) {
+      els.loginCode.value = state.joinCode || codeFromUrl;
+      els.loginStudent.value = state.studentNumber || "";
+      els.sessionName.textContent = state.displayName || "";
+      retryResumeSession();
+    } else if (pending && pending.kind === "join") {
+      if (!codeFromUrl || pending.code === codeFromUrl) {
+        els.loginCode.value = pending.code;
+        els.loginStudent.value = pending.studentNumber;
+      } else {
+        clearPendingJoin();
+      }
+    }
+  }
+
+  async function retryResumeSession() {
+    if (loginInFlight) return;
+    setLoginBusy(true, "Възстановяване на достъпа от този раздел…");
+    els.loginError.hidden = true;
+    try {
+      await resumeSession();
+    } catch (error) {
+      if (error.status !== 401) {
+        // An interrupted connection must not discard this browser's credential.
+        show("login");
+        els.loginRetry.hidden = false;
+        els.loginRetry.textContent = "Продължи от този раздел";
+        els.loginError.textContent = "Връзката не е налична. Опитайте отново от този раздел, когато се възстанови.";
+        els.loginError.hidden = false;
+      }
+    } finally {
+      setLoginBusy(false);
+    }
   }
 
   async function resumeSession() {
@@ -295,50 +424,123 @@
 
   // --- Login ----------------------------------------------------------------
 
+  function acceptLogin(result, pending) {
+    if (result.student_token !== pending.browserToken) {
+      throw new Error("Неуспешно потвърждаване на достъпа. Опитайте отново от този раздел.");
+    }
+    state = {
+      token: result.student_token,
+      sessionId: result.session_id,
+      joinCode: result.join_code,
+      studentNumber: pending.studentNumber || result.student_number || "",
+      displayName: result.display_name,
+      feedback: result.feedback,
+      swapPolicy: result.swap_policy,
+      securityMode: result.security_mode || "standard",
+      itemCount: result.item_count,
+      rulesText: result.rules_text,
+    };
+    // Keep the pending secret if persistence fails, so retry remains possible.
+    saveState(true);
+    clearPendingJoin();
+    clearLostFocusState();
+    hardEnded = false;
+    fullscreenEverEntered = false;
+    currentAttempt = null;
+    els.sessionName.textContent = result.display_name || "";
+    els.lobbyRules.textContent = result.rules_text || "";
+    if (result.status === "live") {
+      fetchNext();
+    } else if (result.status === "closed") {
+      showEnd({ reason: "instructor_closed", score: null });
+    } else {
+      show("lobby");
+      startLobbyPoll();
+    }
+  }
+
+  async function recoverSession(recoveryToken) {
+    if (!recoveryToken || recoveryToken === activeRecoveryToken) return;
+    if (loginInFlight) {
+      queuedRecoveryToken = recoveryToken;
+      return;
+    }
+    activeRecoveryToken = recoveryToken;
+    setLoginBusy(true, "Възстановяване на достъпа до теста…");
+    els.loginError.hidden = true;
+    try {
+      const previous = loadPendingJoin();
+      const pending = previous && previous.kind === "recovery" && previous.recoveryToken === recoveryToken
+        ? previous
+        : { kind: "recovery", recoveryToken, browserToken: makeBrowserToken() };
+      // A broken or expired recovery link must not erase a still-valid browser
+      // credential. Replace the active state only after recovery succeeds.
+      savePendingJoin(pending);
+      const result = await publicApi("/quiz/recover", {
+        method: "POST",
+        body: { recovery_token: pending.recoveryToken, browser_token: pending.browserToken },
+      });
+      acceptLogin(result, pending);
+    } catch (error) {
+      if (error.status === 401 || error.status === 403 || error.status === 410) clearPendingJoin();
+      const pending = loadPendingJoin();
+      els.loginRetry.hidden = !(pending && pending.kind === "recovery") && !state.token;
+      els.loginRetry.textContent = pending && pending.kind === "recovery"
+        ? "Опитай възстановяването отново" : "Продължи от този раздел";
+      els.loginError.textContent = (error.status === 401 || error.status === 403 || error.status === 410)
+        ? "Връзката за възстановяване е невалидна или изтекла. Поискайте нова от преподавателя."
+        : (error.message || "Възстановяването не завърши. Опитайте отново от този раздел.");
+      els.loginError.hidden = false;
+      show("login");
+    } finally {
+      activeRecoveryToken = null;
+      setLoginBusy(false);
+    }
+  }
+
   async function onLoginSubmit(event) {
     event.preventDefault();
+    if (loginInFlight) return;
     els.loginError.hidden = true;
     const code = els.loginCode.value.trim().toUpperCase();
-    const studentNumber = els.loginStudent.value.trim();
-    const accessCode = els.loginAccessCode.value.trim();
-    if (!code || !studentNumber || !accessCode) return;
-    els.loginAccessCode.value = "";
+    const studentNumber = els.loginStudent.value.trim().toUpperCase().replace(/ /g, "");
+    if (!code || !studentNumber) return;
+    const activeCode = String(state.joinCode || "").trim().toUpperCase();
+    const activeStudent = String(state.studentNumber || "").trim().toUpperCase().replace(/ /g, "");
+    if (state.token && activeCode === code && activeStudent === studentNumber) {
+      // A failed question/status request can leave the login form visible even
+      // though this tab already owns the entry. Resume its existing credential.
+      await retryResumeSession();
+      return;
+    }
+    setLoginBusy(true, "Влизане в теста…");
     try {
+      const previous = loadPendingJoin();
+      const pending = previous && previous.kind === "join" && previous.code === code && previous.studentNumber === studentNumber
+        ? previous
+        : { kind: "join", code, studentNumber, browserToken: makeBrowserToken() };
+      // Save before the network request: an interrupted response can retry with
+      // exactly the secret that claimed this one session and student number.
+      savePendingJoin(pending);
       const result = await publicApi("/quiz/join", {
         method: "POST",
-        body: { code, student_number: studentNumber, access_code: accessCode },
+        body: { code, student_number: studentNumber, browser_token: pending.browserToken },
       });
-      hardEnded = false;
-      fullscreenEverEntered = false;
-      currentAttempt = null;
-      state = {
-        token: result.student_token,
-        sessionId: result.session_id,
-        joinCode: result.join_code,
-        displayName: result.display_name,
-        feedback: result.feedback,
-        swapPolicy: result.swap_policy,
-        securityMode: result.security_mode || "standard",
-        itemCount: result.item_count,
-        rulesText: result.rules_text,
-      };
-      clearLostFocusState();
-      saveState();
-      els.sessionName.textContent = result.display_name || "";
-      els.lobbyRules.textContent = result.rules_text || "";
-      if (result.status === "live") {
-        fetchNext();
-      } else if (result.status === "closed") {
-        showEnd({ reason: "instructor_closed", score: null });
-      } else {
-        show("lobby");
-        startLobbyPoll();
-      }
+      acceptLogin(result, pending);
     } catch (err) {
+      if (err.status === 401) clearPendingJoin();
+      if (state.token) {
+        els.loginRetry.hidden = false;
+        els.loginRetry.textContent = "Продължи от този раздел";
+      }
       els.loginError.textContent = err.status === 401
-        ? "Невалиден личен код. Получете личен код за тази сесия от преподавателя."
+        ? (state.token
+          ? "Неуспешен вход за въведените данни. Можете да продължите започнатия тест от този раздел."
+          : "Неуспешен достъп. Продължете от първоначалния раздел на браузъра. Ако сте го загубили, поискайте връзка за възстановяване от преподавателя.")
         : (err.message || "Грешка при влизане.");
       els.loginError.hidden = false;
+    } finally {
+      setLoginBusy(false);
     }
   }
 
@@ -879,7 +1081,6 @@
     currentAttempt = null;
     clearState();
     els.loginStudent.value = "";
-    els.loginAccessCode.value = "";
     show("end");
     const reason = data.reason || "completed";
     const score = data.score;

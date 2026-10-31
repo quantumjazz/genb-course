@@ -17,6 +17,7 @@ import os
 import random
 import re
 import secrets
+import sqlite3
 import threading
 import time
 import uuid
@@ -42,6 +43,16 @@ PSEUDONYM_KEY_BYTES = 32
 TOKEN_LEN_CHARS = 12
 MAX_JSON_BODY_BYTES = 64 * 1024
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+RECOVERY_TTL_MS = 5 * 60 * 1000
+PRIVACY_FIELD_LIMITS = {
+    "controller_name": 300,
+    "contact": 1000,
+    "legal_basis": 4000,
+    "retention": 4000,
+    "recipients": 4000,
+    "rights": 4000,
+    "privacy_notice_url": 2048,
+}
 
 DEFAULTS = {
     "item_count": 30,
@@ -102,19 +113,10 @@ def secret_hash(value):
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def canonical_access_code(value):
-    if not isinstance(value, str):
+def validate_browser_token(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", value):
         raise AuthenticationError("Invalid credentials.")
-    code = re.sub(r"[\s-]", "", value).upper()
-    if not re.fullmatch(r"[A-Z2-7]{16}", code):
-        raise AuthenticationError("Invalid credentials.")
-    return code
-
-
-def make_access_code():
-    # Ten random bytes encode to sixteen base32 symbols: 80 bits of entropy.
-    code = base64.b32encode(secrets.token_bytes(10)).decode("ascii")
-    return "-".join(code[i:i + 4] for i in range(0, len(code), 4))
+    return value
 
 
 def validate_privacy_notice_url(value):
@@ -857,9 +859,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/quiz/health":
                 return self._send_json(200, {"ok": True})
             if path == "/quiz/config":
-                return self._send_json(200, {
-                    "privacy_notice_url": self.server.privacy_notice_url,
-                })
+                return self._send_json(200, self._privacy_config())
+            if path == "/quiz/admin/privacy":
+                if not self._require_admin():
+                    return
+                return self._handle_privacy()
             # Static frontend — only when a frontend dir is configured.
             if self.server.frontend_dir and not path.startswith("/quiz/"):
                 served = self._try_serve_static(path)
@@ -916,6 +920,8 @@ class Handler(BaseHTTPRequestHandler):
             payload = parse_json(body)
             if path == "/quiz/join":
                 return self._handle_join(payload)
+            if path == "/quiz/recover":
+                return self._handle_recover(payload)
             if path == "/quiz/answer":
                 return self._handle_answer(payload)
             if path == "/quiz/blur":
@@ -927,7 +933,11 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 return self._handle_session_create(payload)
             if path == "/quiz/admin/session/access-codes":
-                return self._handle_access_codes(payload)
+                return self._send_error(410, "Personal access codes have been retired.")
+            if path == "/quiz/admin/student/recovery":
+                return self._handle_student_recovery(payload)
+            if path == "/quiz/admin/privacy":
+                return self._handle_privacy(payload)
             if path == "/quiz/admin/session/start":
                 if not self._require_admin():
                     return
@@ -1255,50 +1265,85 @@ class Handler(BaseHTTPRequestHandler):
             conn.execute("DELETE FROM quiz_session WHERE id = ?", (session_id,))
         return self._send_json(200, {"ok": True})
 
-    def _handle_access_codes(self, payload):
+    def _privacy_config(self):
+        rows = self._conn().execute("SELECT key, value FROM quiz_settings").fetchall()
+        saved = {row["key"]: row["value"] for row in rows}
+        privacy = {key: saved.get(key, "") for key in PRIVACY_FIELD_LIMITS}
+        if "privacy_notice_url" not in saved:
+            privacy["privacy_notice_url"] = self.server.privacy_notice_url
+        # Completion of supplied fields is not a legal compliance assessment.
+        # A general institutional policy link cannot establish this app's
+        # specific basis, retention period or recipients on its own.
+        complete = all(
+            privacy[key].strip() for key in PRIVACY_FIELD_LIMITS
+            if key != "privacy_notice_url"
+        )
+        return {
+            "privacy": privacy,
+            "privacy_notice_url": privacy["privacy_notice_url"],
+            "privacy_info_complete": complete,
+        }
+
+    def _handle_privacy(self, payload=None):
+        if payload is not None:
+            unknown = set(payload) - set(PRIVACY_FIELD_LIMITS)
+            if unknown:
+                raise ValueError("Unknown privacy setting.")
+            values = {}
+            for key, value in payload.items():
+                if not isinstance(value, str):
+                    raise ValueError(f"{key} must be text.")
+                value = value.strip()
+                if len(value) > PRIVACY_FIELD_LIMITS[key]:
+                    raise ValueError(
+                        f"{key} must be at most {PRIVACY_FIELD_LIMITS[key]} characters."
+                    )
+                if key == "privacy_notice_url":
+                    value = validate_privacy_notice_url(value)
+                values[key] = value
+            conn = self._conn()
+            with conn:
+                for key, value in values.items():
+                    conn.execute(
+                        "INSERT INTO quiz_settings (key, value) VALUES (?, ?) "
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        (key, value),
+                    )
+        return self._send_json(200, self._privacy_config())
+
+    def _handle_student_recovery(self, payload):
         session_id = payload.get("session_id")
         if not isinstance(session_id, str) or not session_id.strip():
             raise ValueError("session_id is required.")
         session_id = session_id.strip()
-        values = payload.get("student_numbers")
-        if not isinstance(values, list) or not 1 <= len(values) <= 1000:
-            raise ValueError("student_numbers must contain 1–1000 student numbers.")
-        replace = payload.get("replace", False)
-        if not isinstance(replace, bool):
-            raise ValueError("replace must be true or false.")
-        # Validate every value before starting any writes. Repeated normalized
-        # numbers represent the same student and receive just one credential.
-        numbers = list(dict.fromkeys(normalize_student_number(v) for v in values))
+        number = normalize_student_number(payload.get("student_number") or "")
         conn = self._conn()
-        credentials, skipped = [], []
-        lock = SESSION_LOCKS.get(session_id)
-        with lock, conn:
-            if not session_by_id(conn, session_id):
+        with SESSION_LOCKS.get(session_id), conn:
+            session = session_by_id(conn, session_id)
+            if not session:
                 return self._send_error(404, "Session not found.")
-            for number in numbers:
-                existing = conn.execute(
-                    "SELECT 1 FROM quiz_credential WHERE session_id = ? "
-                    "AND student_number = ?", (session_id, number),
-                ).fetchone()
-                if existing and not replace:
-                    skipped.append(number)
-                    continue
-                access_code = make_access_code()
-                conn.execute(
-                    "INSERT INTO quiz_credential "
-                    "(session_id, student_number, access_code_hash) VALUES (?, ?, ?) "
-                    "ON CONFLICT(session_id, student_number) DO UPDATE SET "
-                    "access_code_hash = excluded.access_code_hash",
-                    (session_id, number, secret_hash(canonical_access_code(access_code))),
-                )
-                # Reissuing access also invalidates any previously issued bearer.
-                conn.execute(
-                    "UPDATE quiz_student SET auth_token_hash = NULL "
-                    "WHERE session_id = ? AND student_number = ?",
-                    (session_id, number),
-                )
-                credentials.append({"student_number": number, "access_code": access_code})
-        return self._send_json(200, {"credentials": credentials, "skipped": skipped})
+            if session["status"] == "closed":
+                return self._send_error(409, "This session has ended.")
+            student = conn.execute(
+                "SELECT * FROM quiz_student WHERE session_id = ? AND student_number = ?",
+                (session_id, number),
+            ).fetchone()
+            if not student:
+                return self._send_error(404, "Student not found in this session.")
+            recovery_token = secrets.token_urlsafe(32)
+            expires_at = now_ms() + RECOVERY_TTL_MS
+            conn.execute(
+                "UPDATE quiz_student SET auth_token_hash = NULL, "
+                "recovery_token_hash = ?, recovery_expires_at = ?, "
+                "recovery_used_hash = NULL, recovery_used_expires_at = NULL "
+                "WHERE session_id = ? AND student_token = ?",
+                (secret_hash(recovery_token), expires_at, session_id, student["student_token"]),
+            )
+        return self._send_json(200, {
+            "recovery_url": self.server.public_join_url(session["join_code"])
+                            + "#recovery=" + recovery_token,
+            "expires_at": expires_at,
+        })
 
     def _handle_session_list(self):
         conn = self._conn()
@@ -1385,71 +1430,123 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- Student: join / next / answer / blur / live_status ----------------
 
+    def _login_payload(self, session, bearer):
+        return {
+            "student_token": bearer,
+            "session_id": session["id"],
+            "join_code": session["join_code"],
+            "status": session["status"],
+            "display_name": session["display_name"],
+            "rules_text": rules_text(session),
+            "item_count": session["item_count"],
+            "duration_minutes": session["duration_minutes"],
+            "feedback": session["feedback"],
+            "swap_policy": session["swap_policy"],
+            "security_mode": session["security_mode"],
+        }
+
     def _handle_join(self, payload):
         try:
             code = payload.get("code")
             if not isinstance(code, str) or not code.strip():
                 raise AuthenticationError("Invalid credentials.")
             code = code.strip().upper()
-            student_number = normalize_student_number(payload.get("student_number") or "")
-            access_code = canonical_access_code(payload.get("access_code"))
+            number = normalize_student_number(payload.get("student_number") or "")
+            bearer = validate_browser_token(payload.get("browser_token"))
         except ValueError:
             raise AuthenticationError("Invalid credentials.")
         conn = self._conn()
-        row = session_by_code(conn, code)
-        if not row:
+        session = session_by_code(conn, code)
+        if not session:
             raise AuthenticationError("Invalid credentials.")
-        lock = SESSION_LOCKS.get(row["id"])
-        with lock, conn:
-            row = session_by_id(conn, row["id"])
-            if not row:
+        bearer_hash = secret_hash(bearer)
+        with SESSION_LOCKS.get(session["id"]), conn:
+            session = session_by_id(conn, session["id"])
+            if not session:
                 raise AuthenticationError("Invalid credentials.")
-            credential = conn.execute(
-                "SELECT access_code_hash FROM quiz_credential "
-                "WHERE session_id = ? AND student_number = ?",
-                (row["id"], student_number),
-            ).fetchone()
-            if not credential or not hmac.compare_digest(
-                credential["access_code_hash"], secret_hash(access_code)
-            ):
-                raise AuthenticationError("Invalid credentials.")
-            if row["status"] == "closed":
+            if session["status"] == "closed":
                 raise ValueError("This session has ended.")
             existing = conn.execute(
                 "SELECT * FROM quiz_student WHERE session_id = ? AND student_number = ?",
-                (row["id"], student_number),
+                (session["id"], number),
             ).fetchone()
-            token = existing["student_token"] if existing else derive_student_token(
-                row["pseudonym_key"], student_number
-            )
-            bearer = secrets.token_urlsafe(32)
             if existing:
-                conn.execute(
-                    "UPDATE quiz_student SET auth_token_hash = ? "
-                    "WHERE session_id = ? AND student_token = ?",
-                    (secret_hash(bearer), row["id"], token),
-                )
+                # Faculty numbers are self-declared. Knowing one never permits
+                # overwriting the browser credential of an existing entry.
+                if not existing["auth_token_hash"] or not hmac.compare_digest(
+                    existing["auth_token_hash"], bearer_hash
+                ):
+                    raise AuthenticationError(
+                        "This entry belongs to another browser. Use the original browser "
+                        "or ask the instructor to recover access."
+                    )
             else:
-                conn.execute(
-                    """INSERT INTO quiz_student
-                         (session_id, student_token, student_number, joined_at, auth_token_hash)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (row["id"], token, student_number, now_ms(), secret_hash(bearer)),
-                )
+                # A different token is required for every session/student entry
+                # because bearer authentication intentionally carries no URL ID.
+                if conn.execute(
+                    "SELECT 1 FROM quiz_student WHERE auth_token_hash = ?", (bearer_hash,)
+                ).fetchone():
+                    raise AuthenticationError("Invalid credentials.")
+                token = derive_student_token(session["pseudonym_key"], number)
+                try:
+                    conn.execute(
+                        """INSERT INTO quiz_student
+                             (session_id, student_token, student_number, joined_at, auth_token_hash)
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (session["id"], token, number, now_ms(), bearer_hash),
+                    )
+                except sqlite3.IntegrityError:
+                    raise AuthenticationError("Invalid credentials.")
+        return self._send_json(200, self._login_payload(session, bearer))
 
-        return self._send_json(200, {
-            "student_token": bearer,
-            "session_id": row["id"],
-            "join_code": row["join_code"],
-            "status": row["status"],
-            "display_name": row["display_name"],
-            "rules_text": rules_text(row),
-            "item_count": row["item_count"],
-            "duration_minutes": row["duration_minutes"],
-            "feedback": row["feedback"],
-            "swap_policy": row["swap_policy"],
-            "security_mode": row["security_mode"],
-        })
+    def _handle_recover(self, payload):
+        recovery_token = validate_browser_token(payload.get("recovery_token"))
+        bearer = validate_browser_token(payload.get("browser_token"))
+        recovery_hash = secret_hash(recovery_token)
+        bearer_hash = secret_hash(bearer)
+        conn = self._conn()
+        student = conn.execute(
+            "SELECT * FROM quiz_student WHERE recovery_token_hash = ? OR recovery_used_hash = ?",
+            (recovery_hash, recovery_hash),
+        ).fetchone()
+        if not student:
+            raise AuthenticationError("Invalid or expired recovery link.")
+        with SESSION_LOCKS.get(student["session_id"]), conn:
+            student = student_row(conn, student["session_id"], student["student_token"])
+            if not student:
+                raise AuthenticationError("Invalid or expired recovery link.")
+            session = session_by_id(conn, student["session_id"])
+            if not session or session["status"] == "closed":
+                raise AuthenticationError("Invalid or expired recovery link.")
+            if student["recovery_token_hash"] == recovery_hash:
+                if not student["recovery_expires_at"] or student["recovery_expires_at"] <= now_ms():
+                    raise AuthenticationError("Invalid or expired recovery link.")
+                if conn.execute(
+                    "SELECT 1 FROM quiz_student WHERE auth_token_hash = ?", (bearer_hash,)
+                ).fetchone():
+                    raise AuthenticationError("Invalid credentials.")
+                try:
+                    conn.execute(
+                        "UPDATE quiz_student SET auth_token_hash = ?, "
+                        "recovery_used_hash = recovery_token_hash, "
+                        "recovery_used_expires_at = recovery_expires_at, "
+                        "recovery_token_hash = NULL, recovery_expires_at = NULL "
+                        "WHERE session_id = ? AND student_token = ?",
+                        (bearer_hash, student["session_id"], student["student_token"]),
+                    )
+                except sqlite3.IntegrityError:
+                    raise AuthenticationError("Invalid credentials.")
+            elif not (
+                student["recovery_used_hash"] == recovery_hash
+                and student["recovery_used_expires_at"]
+                and student["recovery_used_expires_at"] > now_ms()
+                and student["auth_token_hash"]
+                and hmac.compare_digest(student["auth_token_hash"], bearer_hash)
+            ):
+                # Lost-response retries may return the already completed login
+                # only to the same browser. The link cannot bind another browser.
+                raise AuthenticationError("Invalid or expired recovery link.")
+        return self._send_json(200, self._login_payload(session, bearer))
 
     def _handle_live_status(self, qs):
         student = self._authenticated_student()
@@ -1840,6 +1937,9 @@ def main():
     admin_key = os.environ.get("QUIZ_ADMIN_KEY", "").strip()
     if not admin_key:
         parser.error("QUIZ_ADMIN_KEY must be set; refusing to start without admin protection.")
+    # Newly created databases, WAL files and uploaded banks are private to the
+    # service account. Existing deployment files are checked during upgrades.
+    os.umask(0o077)
     try:
         privacy_notice_url = validate_privacy_notice_url(
             os.environ.get("QUIZ_PRIVACY_NOTICE_URL", "")

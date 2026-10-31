@@ -7,6 +7,7 @@ No running server, production database or administrator secret is used.
 import io
 import json
 import os
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -14,7 +15,10 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 from openpyxl import load_workbook
 
@@ -88,41 +92,53 @@ class QuizSecurityTests(unittest.TestCase):
             result = content if raw else json.loads(content)
             return response.status, result, dict(response.headers)
 
-    def issue(self, *numbers, replace=False):
-        status, result, _ = self.request("POST", "/quiz/admin/session/access-codes", {
-            "session_id": self.sid, "student_numbers": list(numbers),
-            "replace": replace,
-        }, self.admin)
-        self.assertIn(status, (200, 201), result)
-        return result
-
-    def login(self, number, code):
+    def login(self, number, browser_token):
         return self.request("POST", "/quiz/join", {
             "code": self.session["join_code"], "student_number": number,
-            "access_code": code,
+            "browser_token": browser_token,
         })
 
     def student(self, number):
-        issued = self.issue(number)
-        code = issued["credentials"][0]["access_code"]
-        status, result, _ = self.login(number, code)
+        browser_token = secrets.token_urlsafe(32)
+        status, result, _ = self.login(number, browser_token)
         self.assertEqual(status, 200, result)
-        return code, result["student_token"], {"X-Student-Token": result["student_token"]}
+        self.assertEqual(result["student_token"], browser_token)
+        return browser_token, result["student_token"], {"X-Student-Token": result["student_token"]}
+
+    def recovery(self, number):
+        status, result, _ = self.request("POST", "/quiz/admin/student/recovery", {
+            "session_id": self.sid, "student_number": number,
+        }, self.admin)
+        self.assertEqual(status, 200, result)
+        parsed = urlparse(result["recovery_url"])
+        self.assertNotIn("recovery", parsed.query)
+        token = parse_qs(parsed.fragment)["recovery"][0]
+        return token, result["expires_at"]
+
+    def recover(self, recovery_token, browser_token):
+        return self.request("POST", "/quiz/recover", {
+            "recovery_token": recovery_token, "browser_token": browser_token,
+        })
 
     def test_admin_access_fails_closed(self):
-        for path in ("/quiz/admin/session/list", "/quiz/admin/bank/list"):
+        for path in ("/quiz/admin/session/list", "/quiz/admin/bank/list", "/quiz/admin/privacy"):
             self.assertEqual(self.request("GET", path)[0], 401)
-        self.assertEqual(self.request("POST", "/quiz/admin/session/access-codes", {
-            "session_id": self.sid, "student_numbers": ["TEST-001"],
+        self.assertEqual(self.request("POST", "/quiz/admin/student/recovery", {
+            "session_id": self.sid, "student_number": "TEST-001",
         })[0], 401)
+        self.assertEqual(self.request("POST", "/quiz/admin/privacy", {"contact": "test"})[0], 401)
         self.http.admin_key = ""
         self.assertEqual(self.request("GET", "/quiz/admin/session/list", headers=self.admin)[0], 401)
 
-    def test_private_code_required_and_secrets_not_stored_raw(self):
-        code, token, headers = self.student("TEST-001")
+    def test_automatic_join_requires_private_browser_secret_to_resume(self):
+        browser_token, token, headers = self.student("TEST-001")
         self.assertGreaterEqual(len(token), 40)
-        for number, attempted in (("TEST-001", ""), ("TEST-001", "WRONG"), ("TEST-002", code)):
+        for number, attempted in (("TEST-001", ""), ("TEST-001", "WRONG"),
+                                  ("TEST-001", secrets.token_urlsafe(32)), ("TEST-002", token)):
             self.assertEqual(self.login(number, attempted)[0], 401)
+        self.assertEqual(self.request("POST", "/quiz/join", {
+            "code": self.session["join_code"], "student_number": "TEST-001",
+        })[0], 401)
         self.assertEqual(self.request("GET", f"/quiz/next?student_token={token}")[0], 401)
         status, question, response_headers = self.request("GET", "/quiz/next", headers=headers)
         self.assertEqual(status, 200, question)
@@ -130,20 +146,19 @@ class QuizSecurityTests(unittest.TestCase):
         self.assertEqual(response_headers.get("Cache-Control"), "no-store")
         self.assertEqual(response_headers.get("Referrer-Policy"), "no-referrer")
         conn = db.connect(self.db_path)
-        with conn:
-            stored = conn.execute("SELECT access_code_hash FROM quiz_credential").fetchone()[0]
-            bearer_hash = conn.execute("SELECT auth_token_hash FROM quiz_student").fetchone()[0]
+        bearer_hash = conn.execute("SELECT auth_token_hash FROM quiz_student").fetchone()[0]
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM quiz_student").fetchone()[0], 1)
         conn.close()
-        self.assertNotEqual(stored, code)
         self.assertNotEqual(bearer_hash, token)
+        self.assertEqual(token, browser_token)
 
-    def test_rejoin_revokes_old_bearer_and_preserves_question(self):
-        code, old_token, headers = self.student("TEST-001")
+    def test_same_browser_rejoin_preserves_question_and_blocks_other_browser(self):
+        browser_token, old_token, headers = self.student("TEST-001")
         _, old_question, _ = self.request("GET", "/quiz/next", headers=headers)
-        status, joined, _ = self.login("TEST-001", code)
+        self.assertEqual(self.login("TEST-001", secrets.token_urlsafe(32))[0], 401)
+        status, joined, _ = self.login("TEST-001", browser_token)
         self.assertEqual(status, 200, joined)
-        self.assertNotEqual(old_token, joined["student_token"])
-        self.assertEqual(self.request("GET", "/quiz/next", headers=headers)[0], 401)
+        self.assertEqual(old_token, joined["student_token"])
         new_headers = {"X-Student-Token": joined["student_token"]}
         _, question, _ = self.request("GET", "/quiz/next", headers=new_headers)
         self.assertEqual(question["attempt_id"], old_question["attempt_id"])
@@ -197,19 +212,20 @@ class QuizSecurityTests(unittest.TestCase):
         self.assertEqual(status, 200, result)
         self.assertTrue(result["swapped"])
 
-    def test_code_reset_preserves_grade_and_revokes_access(self):
-        code, _, headers = self.student("TEST-001")
+    def test_exceptional_recovery_preserves_grade_and_revokes_old_browser(self):
+        old_token, _, headers = self.student("TEST-001")
         _, question, _ = self.request("GET", "/quiz/next", headers=headers)
         self.assertEqual(self.request("POST", "/quiz/answer", {
             "attempt_id": question["attempt_id"], "chosen_visible_index": 0,
         }, headers)[0], 200)
-        duplicate = self.issue("TEST-001")
-        self.assertEqual(duplicate["credentials"], [])
-        self.assertIn("TEST-001", duplicate["skipped"])
-        replacement = self.issue("TEST-001", replace=True)["credentials"][0]["access_code"]
-        self.assertNotEqual(replacement, code)
-        self.assertEqual(self.login("TEST-001", code)[0], 401)
+        recovery_token, _ = self.recovery("TEST-001")
+        replacement = secrets.token_urlsafe(32)
+        self.assertEqual(self.login("TEST-001", old_token)[0], 401)
         self.assertEqual(self.request("GET", "/quiz/next", headers=headers)[0], 401)
+        self.assertEqual(self.login("TEST-001", replacement)[0], 401)
+        self.assertEqual(self.recover(recovery_token, replacement)[0], 200)
+        self.assertEqual(self.recover(recovery_token, replacement)[0], 200)
+        self.assertEqual(self.recover(recovery_token, secrets.token_urlsafe(32))[0], 401)
         self.assertEqual(self.login("TEST-001", replacement)[0], 200)
         status, content, _ = self.request("GET", f"/quiz/admin/session/export?session_id={self.sid}",
                                          headers=self.admin, raw=True)
@@ -237,8 +253,10 @@ class QuizSecurityTests(unittest.TestCase):
         conn.close()
         self.assertEqual(self.request("GET", "/quiz/next",
                                      headers={"X-Student-Token": legacy_token})[0], 401)
-        code = self.issue("LEGACY-001")["credentials"][0]["access_code"]
-        status, joined, _ = self.login("LEGACY-001", code)
+        new_browser = secrets.token_urlsafe(32)
+        self.assertEqual(self.login("LEGACY-001", new_browser)[0], 401)
+        recovery_token, _ = self.recovery("LEGACY-001")
+        status, joined, _ = self.recover(recovery_token, new_browser)
         self.assertEqual(status, 200, joined)
         conn = db.connect(self.db_path)
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM quiz_student").fetchone()[0], 1)
@@ -254,6 +272,59 @@ class QuizSecurityTests(unittest.TestCase):
         for table in ("quiz_credential", "quiz_student", "quiz_attempt", "quiz_incident"):
             self.assertEqual(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], 0, table)
         conn.close()
+
+    def test_first_claim_race_keeps_one_browser_authorized(self):
+        tokens = [secrets.token_urlsafe(32), secrets.token_urlsafe(32)]
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda token: self.login("RACE-001", token), tokens))
+        self.assertEqual(sorted(result[0] for result in results), [200, 401])
+        for token, result in zip(tokens, results):
+            expected = 200 if result[0] == 200 else 401
+            self.assertEqual(self.request("GET", "/quiz/next", headers={"X-Student-Token": token})[0], expected)
+
+    def test_recovery_expires_and_reissuing_invalidates_previous_link(self):
+        self.student("TEST-001")
+        first, _ = self.recovery("TEST-001")
+        second, expires = self.recovery("TEST-001")
+        self.assertEqual(self.recover(first, secrets.token_urlsafe(32))[0], 401)
+        with patch.object(server, "now_ms", return_value=expires + 1):
+            self.assertEqual(self.recover(second, secrets.token_urlsafe(32))[0], 401)
+
+    def test_saved_privacy_fields_are_public_without_invented_defaults(self):
+        status, config, _ = self.request("GET", "/quiz/config")
+        self.assertEqual(status, 200)
+        self.assertFalse(config["privacy_info_complete"])
+        self.assertEqual(config["privacy"]["controller_name"], "")
+        self.assertEqual(config["privacy"]["retention"], "")
+        status, saved, _ = self.request("POST", "/quiz/admin/privacy", {
+            "privacy_notice_url": "https://example.invalid/university-policy",
+        }, self.admin)
+        self.assertEqual(status, 200, saved)
+        self.assertFalse(saved["privacy_info_complete"])
+        notice = {
+            "controller_name": "Synthetic University — test fixture only",
+            "contact": "privacy@example.invalid",
+            "legal_basis": "Synthetic test basis; not a published notice",
+            "retention": "Synthetic retention criterion",
+            "recipients": "Synthetic recipients",
+            "rights": "Synthetic rights and contact",
+            "privacy_notice_url": "",
+        }
+        status, saved, _ = self.request("POST", "/quiz/admin/privacy", notice, self.admin)
+        self.assertEqual(status, 200, saved)
+        _, config, _ = self.request("GET", "/quiz/config")
+        self.assertEqual(config["privacy"], notice)
+        self.assertTrue(config["privacy_info_complete"])
+        status, _, _ = self.request("POST", "/quiz/admin/privacy", {
+            "privacy_notice_url": "javascript:alert(1)",
+        }, self.admin)
+        self.assertEqual(status, 400)
+        status, _, _ = self.request("POST", "/quiz/admin/privacy", {
+            "admin_key": "must-not-be-accepted",
+        }, self.admin)
+        self.assertEqual(status, 400)
+        _, config, _ = self.request("GET", "/quiz/config")
+        self.assertEqual(config["privacy"], notice)
 
 
 class StartupSecurityTests(unittest.TestCase):
