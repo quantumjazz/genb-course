@@ -25,3 +25,11 @@
 
 - **Тема 5: Проблемът на скритото действие** — морален риск, застраховане, мениджърски опортюнизъм
 - **Тема 6: Дизайн на стимули при морален риск** — мониторинг, стимулиращи договори, принципи на стимулиращото заплащане
+
+## Приложения
+
+| Приложение | За студенти | За преподавателя | За прожектиране |
+|---|---|---|---|
+| [Matching Dashboard](https://quantumjazz.github.io/genb-course/matching-dashboard/frontend/) | [Вход](https://quantumjazz.github.io/genb-course/matching-dashboard/frontend/participant.html) | [Конзола](https://quantumjazz.github.io/genb-course/matching-dashboard/frontend/admin.html) | [Дашборд](https://quantumjazz.github.io/genb-course/matching-dashboard/frontend/) |
+| [Labor Auction Sim](https://quantumjazz.github.io/genb-course/labor-auction-sim/frontend/) | [Вход](https://quantumjazz.github.io/genb-course/labor-auction-sim/frontend/student.html) | [Конзола](https://quantumjazz.github.io/genb-course/labor-auction-sim/frontend/instructor.html) | [Дашборд](https://quantumjazz.github.io/genb-course/labor-auction-sim/frontend/dashboard.html) |
+| [Session Quiz](https://quiz.visiometrica.com/) | [Вход](https://quiz.visiometrica.com/) | [Конзола](https://quiz.visiometrica.com/admin) | QR код в конзолата |
